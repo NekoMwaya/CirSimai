@@ -1,38 +1,13 @@
 import React from 'react';
 import { useCircuit } from '../context/CircuitContext';
-import { snap } from '../utils/math';
 
 export default function Sidebar() {
     const { 
         tool, setTool, 
         isDarkMode, setIsDarkMode,
         theme,
-        components, // <--- Added this to count existing components
-        setComponents, setSelectedIds, stagePos, stageScale 
+        spawnComponent // <--- Use shared function
     } = useCircuit();
-
-    const spawnComponent = (type) => {
-        const id = Date.now();
-        const invScale = 1 / stageScale;
-        const centerX = (-stagePos.x + window.innerWidth / 2) * invScale;
-        const centerY = (-stagePos.y + window.innerHeight / 2) * invScale;
-        
-        // --- RESTORED LOGIC ---
-        const count = components.filter(c => c.type === type).length + 1;
-        const defaults = type === 'resistor' 
-            ? { value: '1k', label: `R${count}` }
-            : { value: '5V', label: `V${count}` };
-        // ----------------------
-
-        setComponents(prev => [...prev, { 
-            id, type, 
-            x: snap(centerX), y: snap(centerY), 
-            rotation: 0, 
-            ...defaults 
-        }]);
-        setTool('select'); 
-        setSelectedIds([id]);
-    };
 
     const btnStyle = (active) => ({
         padding: '8px 12px', border: 'none', borderRadius: 4, marginBottom: 5,
@@ -56,14 +31,15 @@ export default function Sidebar() {
                 </button>
             </div>
 
-            <button onClick={() => setTool('select')} style={btnStyle(tool === 'select')}>👆 Move / Pan</button>
-            <button onClick={() => setTool('wire')} style={btnStyle(tool === 'wire')}>✏️ Connect</button>
-            <button onClick={() => setTool('delete')} style={btnStyle(tool === 'delete')}>✂️ Delete</button>
+            <button onClick={() => setTool('select')} style={btnStyle(tool === 'select')}>👆 Move / Pan (Esc)</button>
+            <button onClick={() => setTool('wire')} style={btnStyle(tool === 'wire')}>✏️ Connect (W)</button>
+            <button onClick={() => setTool('delete')} style={btnStyle(tool === 'delete')}>✂️ Delete (Bksp)</button>
             
             <div style={{height: 1, background: '#888', margin: '5px 0'}}></div>
             
-            <button onClick={() => spawnComponent('resistor')} style={btnStyle(false)}>+ Resistor</button>
-            <button onClick={() => spawnComponent('source')} style={btnStyle(false)}>+ Source</button>
+            <button onClick={() => spawnComponent('resistor')} style={btnStyle(false)}>+ Resistor (R)</button>
+            <button onClick={() => spawnComponent('capacitor')} style={btnStyle(false)}>+ Capacitor (C)</button>
+            <button onClick={() => spawnComponent('source')} style={btnStyle(false)}>+ Source (V)</button>
         </div>
     );
 }

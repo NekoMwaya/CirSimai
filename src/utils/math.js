@@ -15,10 +15,10 @@ export const getPins = (comp) => {
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
   const rot = (x, y) => ({ x: x * cos - y * sin, y: x * sin + y * cos });
-  // Offset logic for pins
-  if (comp.type === 'resistor' || comp.type === 'source') {
-    const p1 = rot(-40, 0);
-    const p2 = rot(40, 0);
+
+  if (comp.type === 'resistor' || comp.type === 'source' || comp.type === 'capacitor') {
+    const p1 = rot(-40, 0); // Left Pin
+    const p2 = rot(40, 0);  // Right Pin
     return [{ x: comp.x + p1.x, y: comp.y + p1.y }, { x: comp.x + p2.x, y: comp.y + p2.y }];
   }
   return [];
@@ -26,9 +26,9 @@ export const getPins = (comp) => {
 
 export const getTextPos = (rotation) => {
   const r = rotation % 360;
-  const DIST = 35; 
+  const DIST = 20; 
   let screenX = 0, screenY = 0;
-  if (r === 0 || r === 180) { screenX = -15; screenY = DIST; } 
+  if (r === 0 || r === 180) { screenX = -10; screenY = DIST; } 
   else { screenX = DIST; screenY = -5; }
   
   const rad = (-r * Math.PI) / 180;
@@ -42,7 +42,7 @@ export const getLabelPos = (rotation) => {
   const r = rotation % 360;
   const DIST = 35; 
   let screenX = 0, screenY = 0;
-  if (r === 0 || r === 180) { screenX = -15; screenY = -DIST; } 
+  if (r === 0 || r === 180) { screenX = -10; screenY = -DIST; } 
   else { screenX = -DIST; screenY = -5; }
   
   const rad = (-r * Math.PI) / 180;

@@ -15,7 +15,11 @@ const CircuitEditor = () => {
         wires, setWires,
         theme,
         components, setComponents,
+        selectedIds,
         setSelectedIds,
+        spawnComponent,
+        undo, redo,
+        saveState,
         // We handle wire drawing state locally or in context. 
         // For simplicity, local state for temporary drawing actions is fine.
     } = useCircuit();
@@ -32,22 +36,61 @@ const CircuitEditor = () => {
     // --- KEYBOARD SHORTCUTS ---
     useEffect(() => {
         const handleKey = (e) => {
-            if (e.key === 'r' || e.key === 'R') {
-               setComponents(prev => prev.map(c => 
-                   c.selected ? { ...c, rotation: (c.rotation + 90) % 360 } : c // Requires 'selected' flag or check ID
-               )); 
-               // Note: 'selectedIds' is in Context. Ideally we loop through selectedIds.
+            // Ignore if typing in an input box
+            if (e.target.tagName === 'INPUT') return;
+            if (e.ctrlKey) {
+                if (e.key === 'z' || e.key === 'Z') {
+                    e.preventDefault();
+                    undo();
+                    return;
+                }
+                if (e.key === 'y' || e.key === 'Y') {
+                    e.preventDefault();
+                    redo();
+                    return;
+                }
+                if (e.key === 'r' || e.key === 'R') {
+                    e.preventDefault(); // Stop browser refresh
+                    setComponents(prev => prev.map(c => 
+                        selectedIds.includes(c.id) ? { ...c, rotation: (c.rotation + 90) % 360 } : c
+                    ));
+                }
+                return; // Exit early so 'r' doesn't also spawn a resistor
             }
-            if (e.key === 'Escape') {
-                setIsDrawingWire(false);
-                setWirePoints([]);
-                setCutRect(null);
-                if(tool === 'delete') setTool('select');
+
+            // 2. Single Keys
+            switch(e.key.toLowerCase()) {
+                case 'escape':
+                    setIsDrawingWire(false);
+                    setWirePoints([]);
+                    setCutRect(null);
+                    setTool('select');
+                    break;
+                case 'backspace':
+                    setTool(prev => prev === 'delete' ? 'select' : 'delete');
+                    setSelectedIds([]);
+                    break;
+                case 'w':
+                    setTool('wire');
+                    setSelectedIds([]);
+                    break;
+                case 'r':
+                    spawnComponent('resistor');
+                    break;
+                case 'c':
+                    spawnComponent('capacitor');
+                    break;
+                case 'v':
+                    spawnComponent('source');
+                    break;
+                default:
+                    break;
             }
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
-    }, [tool, setTool, setComponents]);
+    }, [tool, setTool, setComponents, selectedIds, spawnComponent]);
+
 
     // --- HELPER: SNAP LOGIC ---
     const getSnappedPos = (x, y) => {
@@ -104,7 +147,8 @@ const CircuitEditor = () => {
             } else {
                 setIsDrawingWire(false);
                 if (wirePoints[0] !== snapped.x || wirePoints[1] !== snapped.y) {
-                    setWires(prev => [...prev, { id: `wire-${Date.now()}`, points: wirePoints }]);
+                  saveState();
+                  setWires(prev => [...prev, { id: `wire-${Date.now()}`, points: wirePoints }]);
                 }
                 setWirePoints([]);
             }
