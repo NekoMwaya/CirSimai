@@ -82,12 +82,19 @@ export const CircuitProvider = ({ children }) => {
     const invScale = 1 / stageScale;
     const centerX = (-stagePos.x + window.innerWidth / 2) * invScale;
     const centerY = (-stagePos.y + window.innerHeight / 2) * invScale;
+       // FIX: Ensure unique labels by checking if label already exists
+    let prefix = 'C';
+    let defaultVal = '1uF';
     
-    const count = components.filter(c => c.type === type).length + 1;
-    let defaults = {};
-    if (type === 'resistor') defaults = { value: '1k', label: `R${count}` };
-    else if (type === 'capacitor') defaults = { value: '1uF', label: `C${count}` };
-    else if (type === 'source') defaults = { value: '5V', label: `V${count}` };
+    if (type === 'resistor') { prefix = 'R'; defaultVal = '1k'; }
+    else if (type === 'source') { prefix = 'V'; defaultVal = '5V'; }
+
+    let count = 1;
+    while(components.some(c => c.label === `${prefix}${count}`)) {
+        count++;
+    }
+    
+    const defaults = { value: defaultVal, label: `${prefix}${count}` };
 
     setComponents(prev => [...prev, { 
         id, type, 
