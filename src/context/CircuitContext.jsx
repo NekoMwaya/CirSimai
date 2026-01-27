@@ -88,13 +88,19 @@ export const CircuitProvider = ({ children }) => {
     
     if (type === 'resistor') { prefix = 'R'; defaultVal = '1k'; }
     else if (type === 'source') { prefix = 'V'; defaultVal = '5V'; }
+    else if (type === 'ground') { prefix = 'GND'; defaultVal = '0V'; }
 
     let count = 1;
+    // For ground, we don't strictly need unique numbers like GND1, GND2, but safe to keep logic
     while(components.some(c => c.label === `${prefix}${count}`)) {
         count++;
     }
     
     const defaults = { value: defaultVal, label: `${prefix}${count}` };
+    if (type === 'ground') {
+        defaults.label = 'GND'; // Force simplified label for ground
+        defaults.value = '';
+    }
 
     setComponents(prev => [...prev, { 
         id, type, 

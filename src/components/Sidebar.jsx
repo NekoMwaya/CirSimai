@@ -40,6 +40,7 @@ export default function Sidebar() {
             <button onClick={() => spawnComponent('resistor')} style={btnStyle(false)}>+ Resistor (R)</button>
             <button onClick={() => spawnComponent('capacitor')} style={btnStyle(false)}>+ Capacitor (C)</button>
             <button onClick={() => spawnComponent('source')} style={btnStyle(false)}>+ Source (V)</button>
+            <button onClick={() => spawnComponent('ground')} style={btnStyle(false)}>⏚ Ground (G)</button>
         </div>
     );
 }

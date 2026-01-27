@@ -65,8 +65,8 @@ const CircuitComponent = ({ data }) => {
             onMouseLeave={e => { if(tool === 'delete') e.target.getStage().container().style.cursor = 'not-allowed'; }}
             onClick={handleClick}
         >
-            {/* Selection Area */}
-            <Rect x={-40} y={-40} width={80} height={80} fill="transparent" 
+            {/* Selection Area - Reduced size to expose pins/nodes for easier wire selection */}
+            <Rect x={-30} y={-20} width={60} height={40} fill="transparent" 
                   stroke={isSelected ? "#1890ff" : (tool==='delete'?'#ff4d4f':null)} 
                   dash={[5, 5]} />
             
@@ -92,18 +92,31 @@ const CircuitComponent = ({ data }) => {
                 </>
             )}
 
-            {/* Source Visuals */}
+            {/* Source Visuals - Note: Left pin (pin1) is negative, Right pin (pin2) is positive */}
             {data.type === 'source' && (
                 <>
                     <Line points={[-40,0, -15,0]} stroke={theme.stroke} strokeWidth={2} />
                     <Line points={[15,0, 40,0]} stroke={theme.stroke} strokeWidth={2} />
                     <Circle radius={15} stroke={theme.stroke} strokeWidth={2} fill={theme.fill} />
-                     <Text text="+" x={-12} y={-6} fontSize={12} fontStyle="bold" fill={theme.text} />
-                    <Text text="-" x={5} y={-7} fontSize={14} fontStyle="bold" fill={theme.text} />
+                    <Text text="-" x={-10} y={-7} fontSize={14} fontStyle="bold" fill={theme.text} />
+                    <Text text="+" x={4} y={-6} fontSize={12} fontStyle="bold" fill={theme.text} />
                     <Text x={valPos.x} y={valPos.y} text={data.value} fontSize={14} fill={theme.text} rotation={-data.rotation} />
                     <Text x={lblPos.x} y={lblPos.y} text={data.label} fontSize={14} fill={theme.text} rotation={-data.rotation} />
                 </>
             )}
+
+            {/* Ground Visuals */}
+            {data.type === 'ground' && (
+                <>
+                     {/* Connection from pin to top of symbol */}
+                     <Line points={[0,-20, 0,0]} stroke={theme.stroke} strokeWidth={2} />
+                     {/* Horizontal lines */}
+                     <Line points={[-20,0, 20,0]} stroke={theme.stroke} strokeWidth={2} />
+                     <Line points={[-12,6, 12,6]} stroke={theme.stroke} strokeWidth={2} />
+                     <Line points={[-4,12, 4,12]} stroke={theme.stroke} strokeWidth={2} />
+                </>
+            )}
+
         </Group>
     );
 };

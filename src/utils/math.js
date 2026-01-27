@@ -10,16 +10,26 @@ export const getRelativePointerPosition = (node) => {
 };
 
 export const getPins = (comp) => {
-  const r = comp.rotation;
+  const r = comp.rotation || 0;
   const rad = (r * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  const rot = (x, y) => ({ x: x * cos - y * sin, y: x * sin + y * cos });
+  const rot = (x, y) => ({ 
+    x: Math.round(x * cos - y * sin), 
+    y: Math.round(x * sin + y * cos) 
+  });
 
   if (comp.type === 'resistor' || comp.type === 'source' || comp.type === 'capacitor') {
     const p1 = rot(-40, 0); // Left Pin
     const p2 = rot(40, 0);  // Right Pin
-    return [{ x: comp.x + p1.x, y: comp.y + p1.y }, { x: comp.x + p2.x, y: comp.y + p2.y }];
+    return [
+      { x: Math.round(comp.x + p1.x), y: Math.round(comp.y + p1.y) }, 
+      { x: Math.round(comp.x + p2.x), y: Math.round(comp.y + p2.y) }
+    ];
+  } else if (comp.type === 'ground') {
+    // Ground has one pin at top (0, -20 relative to center)
+    const p1 = rot(0, -20);
+    return [{ x: Math.round(comp.x + p1.x), y: Math.round(comp.y + p1.y) }];
   }
   return [];
 };

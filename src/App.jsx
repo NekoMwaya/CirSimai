@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect,useCallback } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback, memo } from 'react';
 import { Stage, Layer, Line, Rect, Group, Circle, Text, Label, Tag } from 'react-konva';
 import { CircuitProvider, useCircuit } from './context/CircuitContext';
 import InfiniteGrid from './components/InfiniteGrid';
@@ -16,45 +16,56 @@ const SimulationOutput = React.memo(SimulationOutputOriginal);
 // Helper for mapping coordinates (replicated from networkAnalysis)
 const coordId = (x, y) => `${Math.round(x)},${Math.round(y)}`;
 
-// --- VOLTAGE INDICATOR COMPONENT ---
-const VoltageIndicator = ({ x, y, voltage, nodeId , onHover}) => {
+// --- VOLTAGE INDICATOR COMPONENT (Memoized) ---
+const VoltageIndicator = memo(({ x, y, voltage, nodeId, onHover }) => {
     const [hover, setHover] = useState(false);
     const color = '#1890ff';
+
+    const handleMouseEnter = useCallback(() => { 
+        setHover(true); 
+        onHover(nodeId); 
+    }, [nodeId, onHover]);
+    
+    const handleMouseLeave = useCallback(() => { 
+        setHover(false); 
+        onHover(null); 
+    }, [onHover]);
 
     return (
         <Group 
             x={x} y={y} 
-            onMouseEnter={() => { setHover(true); onHover(nodeId); }} 
-            onMouseLeave={() => { setHover(false); onHover(null); }}
+            onMouseEnter={handleMouseEnter} 
+            onMouseLeave={handleMouseLeave}
         >
             <Circle 
                 radius={8} fill={color} stroke="white" strokeWidth={2} 
-                shadowBlur={4} shadowColor="black" shadowOpacity={0.3}
+                perfectDrawEnabled={false}
             />
             {hover && (
                 <Label y={-10} opacity={1}>
-                    <Tag fill="rgba(0,0,0,0.8)" pointerDirection="down" pointerWidth={10} pointerHeight={10} cornerRadius={6} shadowBlur={10} />
+                    <Tag fill="rgba(0,0,0,0.8)" pointerDirection="down" pointerWidth={10} pointerHeight={10} cornerRadius={6} />
                     <Text 
                         text={`Node ${nodeId}\n${voltage.toFixed(3)} V`} 
                         fill="white" padding={10} fontSize={14} fontFamily="Arial" align="center"
                     />
                 </Label>
             )}
-             {!hover && (
+            {!hover && (
                 <Text 
-                    text={nodeId} fontSize={11} fill="white" x={-3.5} y={-5} 
-                    fontStyle="bold" listening={false}
+                    text={String(nodeId)} fontSize={11} fill="white" x={-3.5} y={-5} 
+                    fontStyle="bold" listening={false} perfectDrawEnabled={false}
                 />
-             )}
+            )}
         </Group>
     );
-};
+});
 
-// --- CURRENT INDICATOR COMPONENT ---
-const CurrentIndicator = ({ component, current }) => {
-    if (current === undefined || current === null) return null;
+// --- COMPONENT INFO OVERLAY (Shows current and voltage on hover) ---
+const ComponentInfoOverlay = memo(({ x, y, current, voltageDrop, label }) => {
+    const [hover, setHover] = useState(false);
 
     const formatA = (amp) => {
+        if (amp === undefined || amp === null) return null;
         if (Math.abs(amp) < 1e-9) return '0 A';
         if (Math.abs(amp) < 1e-6) return `${(amp * 1e9).toFixed(1)} nA`;
         if (Math.abs(amp) < 1e-3) return `${(amp * 1e6).toFixed(1)} µA`;
@@ -62,31 +73,72 @@ const CurrentIndicator = ({ component, current }) => {
         return `${amp.toFixed(2)} A`;
     };
 
-    const text = formatA(Math.abs(current));
-    const isForward = current >= 0; 
-    
+    const formatV = (volt) => {
+        if (volt === undefined || volt === null) return null;
+        if (Math.abs(volt) < 1e-9) return '0 V';
+        if (Math.abs(volt) < 1e-3) return `${(volt * 1e3).toFixed(2)} mV`;
+        return `${volt.toFixed(3)} V`;
+    };
+
+    const currentText = formatA(current !== undefined ? Math.abs(current) : null);
+    const voltageText = formatV(voltageDrop !== undefined ? Math.abs(voltageDrop) : null);
+
+    // Build info lines
+    const lines = [];
+    if (label) lines.push(label);
+    if (voltageText) lines.push(`ΔV: ${voltageText}`);
+    if (currentText) lines.push(`I: ${currentText}`);
+
+    if (lines.length === 0) return null;
+
+    const handleMouseEnter = useCallback(() => setHover(true), []);
+    const handleMouseLeave = useCallback(() => setHover(false), []);
+
     return (
-        <Group x={component.x} y={component.y} rotation={component.rotation}>
-             <Rect 
-                x={-24} y={-24} width={48} height={16} 
-                fill="rgba(255, 255, 255, 0.9)" 
-                stroke="#faad14" strokeWidth={1} cornerRadius={4}
-                shadowBlur={2} shadowOpacity={0.1}
+        <Group x={x} y={y}>
+            {/* Invisible hit area for hover detection - Reduced size to expose pins/nodes */}
+            <Rect 
+                x={-30} y={-20} width={60} height={40} 
+                fill="transparent"
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
             />
-            <Text 
-                x={-24} y={-22} width={48} 
-                text={text} 
-                fontSize={10} fontFamily="Arial" fill="#faad14" align="center" 
-                fontStyle="bold"
-            />
-            <Text 
-                x={isForward ? 12 : -18} y={-21}
-                text={isForward ? "→" : "←"}
-                fontSize={10} fill="#faad14" fontStyle="bold"
-            />
+            {hover && (
+                <Label y={-45}>
+                    <Tag 
+                        fill="rgba(0,0,0,0.85)" 
+                        pointerDirection="down" 
+                        pointerWidth={10} 
+                        pointerHeight={6} 
+                        cornerRadius={6}
+                    />
+                    <Text 
+                        text={lines.join('\n')}
+                        fill="white" 
+                        padding={8} 
+                        fontSize={12} 
+                        fontFamily="Arial" 
+                        align="center"
+                        lineHeight={1.4}
+                    />
+                </Label>
+            )}
         </Group>
     );
-};
+});
+
+// --- WIRE COMPONENT (Memoized) ---
+const Wire = memo(({ wire, isHighlighted, strokeColor, onClick }) => {
+    return (
+        <Group onClick={onClick}>
+            {isHighlighted && (
+                <Line points={wire.points} stroke="rgba(255, 215, 0, 0.6)" strokeWidth={14} lineCap="round" lineJoin="round" perfectDrawEnabled={false} />
+            )}
+            <Line points={wire.points} stroke="transparent" strokeWidth={10} perfectDrawEnabled={false} />
+            <Line points={wire.points} stroke={strokeColor} strokeWidth={2} lineCap="round" perfectDrawEnabled={false} />
+        </Group>
+    );
+});
 
 const CircuitEditor = () => {
     const { 
@@ -115,10 +167,27 @@ const CircuitEditor = () => {
     const [simNodeValues, setSimNodeValues] = useState({}); 
     const [simComponentMap, setSimComponentMap] = useState({}); 
     const [simCurrentValues, setSimCurrentValues] = useState({}); 
-    const [simNodeMap, setSimNodeMap] = useState(null); // Add state
-    const [highlightNode, setHighlightNode] = useState(null); // Add state
+    const [simVoltageDrops, setSimVoltageDrops] = useState({});
+    const [simNodeMap, setSimNodeMap] = useState(null);
+    const [highlightNode, setHighlightNode] = useState(null);
 
     const nodes = useMemo(() => getJunctions(wires), [wires]);
+
+    // Pre-compute wire node mapping for highlight (avoid recalc on every render)
+    const wireNodeMapping = useMemo(() => {
+        if (!simNodeMap) return new Map();
+        const mapping = new Map();
+        wires.forEach(w => {
+            const nodeId = simNodeMap.get(coordId(w.points[0], w.points[1]));
+            mapping.set(w.id, nodeId);
+        });
+        return mapping;
+    }, [wires, simNodeMap]);
+
+    // Stable callback for hover to avoid re-creating on every render
+    const handleNodeHover = useCallback((nodeId) => {
+        setHighlightNode(nodeId);
+    }, []);
 
     const handleCloseSim = useCallback(() => setShowSim(false), []);
 
@@ -145,6 +214,7 @@ const CircuitEditor = () => {
                 case 'r': spawnComponent('resistor'); break;
                 case 'c': spawnComponent('capacitor'); break;
                 case 'v': spawnComponent('source'); break;
+                case 'g': spawnComponent('ground'); break;
                 default: break;
             }
         };
@@ -275,42 +345,51 @@ const CircuitEditor = () => {
     const handleParsedData = useCallback((parsed) => {
         if (!parsed) return;
 
+        let voltageMap = { '0': 0 };
+
         // 1. Extract DC Nodes (if explicit .OP was run or parsed from .TRAN initial)
         if (parsed.nodes && parsed.nodes.length > 0) {
-            // FIX: Ensure clean map starts with Ground
-            const voltageMap = { '0': 0 };
             parsed.nodes.forEach(n => { voltageMap[n.name] = n.value; });
-            setSimNodeValues(voltageMap);
         }
 
         if (parsed.table && parsed.table.rows.length > 0) {
             const lastRow = parsed.table.rows[parsed.table.rows.length - 1]; 
             
-            // FIX: Use functional update to avoid dependency on simNodeValues
-            setSimNodeValues(prevValues => {
-                // Ensure we keep existing ground if present, or add it if missing
-                const voltageMapUpdate = { '0': 0, ...prevValues };
-                Object.keys(lastRow).forEach(key => {
-                    if (key.startsWith('v(')) {
-                        const nodeStr = key.replace('v(', '').replace(')', '');
-                        if (voltageMapUpdate[nodeStr] === undefined) {
-                             voltageMapUpdate[nodeStr] = lastRow[key];
-                        }
-                    }
-                });
-                return voltageMapUpdate;
+            // Extract voltage values from table
+            Object.keys(lastRow).forEach(key => {
+                if (key.startsWith('v(')) {
+                    const nodeStr = key.replace('v(', '').replace(')', '');
+                    voltageMap[nodeStr] = lastRow[key];
+                }
             });
 
+            // Extract currents
             if (simComponentMap) {
                 const currentMap = {};
                 Object.entries(simComponentMap).forEach(([compId, info]) => {
-                    const probeKey = info.probe.toLowerCase();
-                    if (lastRow[probeKey] !== undefined) {
-                        currentMap[compId] = lastRow[probeKey];
+                    if (info.probe) {
+                        const probeKey = info.probe.toLowerCase();
+                        if (lastRow[probeKey] !== undefined) {
+                            currentMap[compId] = lastRow[probeKey];
+                        }
                     }
                 });
                 setSimCurrentValues(currentMap);
             }
+        }
+
+        // Set voltage values
+        setSimNodeValues(voltageMap);
+
+        // Calculate voltage drops for each component
+        if (simComponentMap) {
+            const voltageDropMap = {};
+            Object.entries(simComponentMap).forEach(([compId, info]) => {
+                const v1 = voltageMap[String(info.node1)] ?? 0;
+                const v2 = voltageMap[String(info.node2)] ?? 0;
+                voltageDropMap[compId] = v1 - v2;
+            });
+            setSimVoltageDrops(voltageDropMap);
         }
     }, [simComponentMap]);
 
@@ -351,26 +430,25 @@ const CircuitEditor = () => {
                 <Layer>
                     <InfiniteGrid stagePos={stagePos} stageScale={stageScale} theme={theme} />
 
-                    {/* WIRES */}
+                    {/* WIRES - Using memoized component */}
                     {wires.map((w) => {
-                        const startNode = simNodeMap ? simNodeMap.get(coordId(w.points[0], w.points[1])) : null;
-                        // const endNode = simNodeMap ? simNodeMap.get(coordId(w.points[2], w.points[3])) : null; // Usually same
-                        const isHighlighted = highlightNode !== null && startNode === highlightNode;
+                        const wireNode = wireNodeMapping.get(w.id);
+                        const isHighlighted = highlightNode !== null && wireNode === highlightNode;
                         
                         return (
-                            <Group key={w.id} onClick={(e) => handleWireClick(w.id, e)}>
-                                {isHighlighted && (
-                                     <Line points={w.points} stroke="rgba(255, 215, 0, 0.6)" strokeWidth={14} lineCap="round" lineJoin="round" />
-                                )}
-                                <Line points={w.points} stroke="transparent" strokeWidth={10} />
-                                <Line points={w.points} stroke={theme.stroke} strokeWidth={2} lineCap="round" />
-                            </Group>
+                            <Wire 
+                                key={w.id}
+                                wire={w}
+                                isHighlighted={isHighlighted}
+                                strokeColor={theme.stroke}
+                                onClick={(e) => handleWireClick(w.id, e)}
+                            />
                         );
                     })}
 
                     {/* JUNCTIONS (NODES) */}
                     {nodes.map((n, i) => (
-                        <Rect key={`node-${i}`} x={n.x - 3} y={n.y - 3} width={6} height={6} fill={theme.node} />
+                        <Rect key={`node-${i}`} x={n.x - 3} y={n.y - 3} width={6} height={6} fill={theme.node} perfectDrawEnabled={false} />
                     ))}
 
                     {/* COMPONENTS */}
@@ -379,11 +457,23 @@ const CircuitEditor = () => {
                     ))}
 
                     {/* TOOLS UI */}
-                    {isDrawingWire && <Line points={wirePoints} stroke="#1890ff" strokeWidth={2} dash={[5, 5]} />}
-                    {tool === 'wire' && <Rect x={cursorPos.x - 2} y={cursorPos.y - 2} width={4} height={4} fill="red" />}
-                    {cutRect && <Rect x={cutRect.x} y={cutRect.y} width={cutRect.width} height={cutRect.height} fill="rgba(255, 77, 79, 0.3)" stroke="#ff4d4f" />}
+                    {isDrawingWire && <Line points={wirePoints} stroke="#1890ff" strokeWidth={2} dash={[5, 5]} perfectDrawEnabled={false} />}
+                    {tool === 'wire' && <Rect x={cursorPos.x - 2} y={cursorPos.y - 2} width={4} height={4} fill="red" perfectDrawEnabled={false} />}
+                    {cutRect && <Rect x={cutRect.x} y={cutRect.y} width={cutRect.width} height={cutRect.height} fill="rgba(255, 77, 79, 0.3)" stroke="#ff4d4f" perfectDrawEnabled={false} />}
                     
-                    {/* VOLTAGE INDICATORS */}
+                    {/* COMPONENT INFO OVERLAY (Current & Voltage Drop on hover) */}
+                    {showSim && components.filter(c => c.type !== 'ground').map(c => (
+                        <ComponentInfoOverlay 
+                            key={`info-${c.id}`} 
+                            x={c.x}
+                            y={c.y}
+                            current={simCurrentValues[c.id]}
+                            voltageDrop={simVoltageDrops[c.id]}
+                            label={c.label}
+                        />
+                    ))}
+
+                    {/* VOLTAGE INDICATORS - Render LAST to be on top of components for prioritization */}
                     {showSim && Object.entries(simNodeLocations).map(([id, loc]) => (
                         simNodeValues[id] !== undefined && (
                             <VoltageIndicator 
@@ -391,18 +481,7 @@ const CircuitEditor = () => {
                                 x={loc.x} y={loc.y} 
                                 voltage={simNodeValues[id]} 
                                 nodeId={parseInt(id)} 
-                                onHover={setHighlightNode}
-                            />
-                        )
-                    ))}
-
-                    {/* CURRENT INDICATORS (NEW COMPONENT CURRENT BADGES) */}
-                    {showSim && components.map(c => (
-                        simCurrentValues[c.id] !== undefined && (
-                            <CurrentIndicator 
-                                key={`i-${c.id}`} 
-                                component={c} 
-                                current={simCurrentValues[c.id]}
+                                onHover={handleNodeHover}
                             />
                         )
                     ))}
