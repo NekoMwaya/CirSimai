@@ -17,9 +17,9 @@ const SimulationOutput = React.memo(SimulationOutputOriginal);
 const coordId = (x, y) => `${Math.round(x)},${Math.round(y)}`;
 
 // --- VOLTAGE INDICATOR COMPONENT (Memoized) ---
-const VoltageIndicator = memo(({ x, y, voltage, nodeId, onHover }) => {
+const VoltageIndicator = memo(({ x, y, voltage, nodeId, onHover, onProbe, isProbed }) => {
     const [hover, setHover] = useState(false);
-    const color = '#1890ff';
+    const color = isProbed ? '#52c41a' : '#1890ff'; // Green if probed, blue otherwise
 
     const handleMouseEnter = useCallback(() => { 
         setHover(true); 
@@ -30,12 +30,19 @@ const VoltageIndicator = memo(({ x, y, voltage, nodeId, onHover }) => {
         setHover(false); 
         onHover(null); 
     }, [onHover]);
+    
+    const handleClick = useCallback((e) => {
+        e.cancelBubble = true;
+        if (onProbe) onProbe(nodeId);
+    }, [nodeId, onProbe]);
 
     return (
         <Group 
             x={x} y={y} 
             onMouseEnter={handleMouseEnter} 
             onMouseLeave={handleMouseLeave}
+            onClick={handleClick}
+            style={{ cursor: 'pointer' }}
         >
             <Circle 
                 radius={8} fill={color} stroke="white" strokeWidth={2} 
@@ -45,7 +52,7 @@ const VoltageIndicator = memo(({ x, y, voltage, nodeId, onHover }) => {
                 <Label y={-10} opacity={1}>
                     <Tag fill="rgba(0,0,0,0.8)" pointerDirection="down" pointerWidth={10} pointerHeight={10} cornerRadius={6} />
                     <Text 
-                        text={`Node ${nodeId}\n${voltage.toFixed(3)} V`} 
+                        text={`Node ${nodeId}\n${voltage.toFixed(3)} V\n${isProbed ? '📍 Probed' : '🔍 Click to probe'}`} 
                         fill="white" padding={10} fontSize={14} fontFamily="Arial" align="center"
                     />
                 </Label>
@@ -170,6 +177,8 @@ const CircuitEditor = () => {
     const [simVoltageDrops, setSimVoltageDrops] = useState({});
     const [simNodeMap, setSimNodeMap] = useState(null);
     const [highlightNode, setHighlightNode] = useState(null);
+    const [probeNodeId, setProbeNodeId] = useState(null); // For wire probing during transient
+    const [parsedSimData, setParsedSimData] = useState(null); // Store full parsed data for probing
 
     const nodes = useMemo(() => getJunctions(wires), [wires]);
 
@@ -194,7 +203,7 @@ const CircuitEditor = () => {
     // Keyboard handling
     useEffect(() => {
         const handleKey = (e) => {
-            if (e.target.tagName === 'INPUT') return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
             if (e.ctrlKey) {
                 if (e.key === 'z') { e.preventDefault(); undo(); return; }
                 if (e.key === 'y') { e.preventDefault(); redo(); return; }
@@ -215,6 +224,14 @@ const CircuitEditor = () => {
                 case 'c': spawnComponent('capacitor'); break;
                 case 'v': spawnComponent('source'); break;
                 case 'g': spawnComponent('ground'); break;
+                case 'f': // Flip/Mirror selected components
+                    if (selectedIds.length > 0) {
+                        e.preventDefault();
+                        setComponents(prev => prev.map(c => 
+                            selectedIds.includes(c.id) ? { ...c, flip: !c.flip } : c
+                        ));
+                    }
+                    break;
                 default: break;
             }
         };
@@ -304,12 +321,29 @@ const CircuitEditor = () => {
     };
     const handleWireClick = (id, e) => {
         e.cancelBubble = true; 
-        if(tool === 'delete'){ setWires(prev => prev.filter(w => w.id !== id)); } else { setSelectedIds([id]); }
+        if(tool === 'delete'){ 
+            setWires(prev => prev.filter(w => w.id !== id)); 
+        } else { 
+            setSelectedIds([id]); 
+            // If simulation is running, set probe to this wire's node
+            if (showSim && simNodeMap) {
+                const wire = wires.find(w => w.id === id);
+                if (wire) {
+                    const nodeId = simNodeMap.get(coordId(wire.points[0], wire.points[1]));
+                    if (nodeId !== undefined) {
+                        setProbeNodeId(nodeId);
+                    }
+                }
+            }
+        }
     };
 
     // --- SIMULATION LOGIC ---
     const handleRunSimulation = async () => {
         console.log("--- STARTING SIMULATION ---");
+        
+        // Reset probe node for fresh simulation
+        setProbeNodeId(null);
         
         const { netlist: rawNetlist, nodeLocations, componentMap, nodeMap } = generateNetlist(components, wires);
         setSimNodeMap(nodeMap);
@@ -345,25 +379,28 @@ const CircuitEditor = () => {
     const handleParsedData = useCallback((parsed) => {
         if (!parsed) return;
 
+        // Store full parsed data for probing
+        setParsedSimData(parsed);
+
         let voltageMap = { '0': 0 };
+        let dcVoltageMap = { '0': 0 }; // Separate map for DC OP values
 
-        // 1. Extract DC Nodes (if explicit .OP was run or parsed from .TRAN initial)
+        // 1. Extract DC Operating Point values (from .OP analysis)
+        // These are the steady-state DC bias values and should be used for the overlay
         if (parsed.nodes && parsed.nodes.length > 0) {
-            parsed.nodes.forEach(n => { voltageMap[n.name] = n.value; });
-        }
-
-        if (parsed.table && parsed.table.rows.length > 0) {
-            const lastRow = parsed.table.rows[parsed.table.rows.length - 1]; 
-            
-            // Extract voltage values from table
-            Object.keys(lastRow).forEach(key => {
-                if (key.startsWith('v(')) {
-                    const nodeStr = key.replace('v(', '').replace(')', '');
-                    voltageMap[nodeStr] = lastRow[key];
+            parsed.nodes.forEach(n => { 
+                // Only extract node voltages, not branch currents
+                if (!n.name.includes('#branch') && !n.name.includes('[')) {
+                    dcVoltageMap[n.name] = n.value; 
                 }
             });
+        }
 
-            // Extract currents
+        // 2. Extract transient table values (for reference, but don't use for DC overlay)
+        if (parsed.table && parsed.table.rows.length > 0) {
+            const lastRow = parsed.table.rows[parsed.table.rows.length - 1]; 
+
+            // Extract currents from transient data
             if (simComponentMap) {
                 const currentMap = {};
                 Object.entries(simComponentMap).forEach(([compId, info]) => {
@@ -378,10 +415,15 @@ const CircuitEditor = () => {
             }
         }
 
+        // 3. Use DC OP values for the voltage overlay
+        // DC OP gives the true steady-state operating point
+        // For nodes not in DC OP, use 0 (ground reference)
+        voltageMap = { ...dcVoltageMap };
+
         // Set voltage values
         setSimNodeValues(voltageMap);
 
-        // Calculate voltage drops for each component
+        // Calculate voltage drops for each component using DC values
         if (simComponentMap) {
             const voltageDropMap = {};
             Object.entries(simComponentMap).forEach(([compId, info]) => {
@@ -415,6 +457,8 @@ const CircuitEditor = () => {
                 data={simOutput}
                 onClose={() => setShowSim(false)}
                 onParsedData={handleParsedData}
+                probeNodeId={probeNodeId}
+                onProbeNodeChange={setProbeNodeId}
             />
             
             <Stage
@@ -482,6 +526,8 @@ const CircuitEditor = () => {
                                 voltage={simNodeValues[id]} 
                                 nodeId={parseInt(id)} 
                                 onHover={handleNodeHover}
+                                onProbe={setProbeNodeId}
+                                isProbed={probeNodeId === parseInt(id)}
                             />
                         )
                     ))}

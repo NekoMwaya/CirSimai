@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
 
-const SimulationOutput = ({ data, isVisible, onClose, onParsedData }) => {
-    const [activeTab, setActiveTab] = useState('dc'); 
+const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeId, onProbeNodeChange }) => {
+    const [activeTab, setActiveTab] = useState('dc');
 
     const parsed = useMemo(() => {
         if (!data || data.length === 0) return null;
@@ -90,9 +90,52 @@ const SimulationOutput = ({ data, isVisible, onClose, onParsedData }) => {
 
     if (!isVisible) return null;
     
-    const activeData = parsed || { nodes: [], table: { rows: [] } };
+    const activeData = parsed || { nodes: [], table: { rows: [], cols: [] } };
     const hasDC = activeData.nodes.length > 0;
     const hasTran = activeData.table.rows.length > 0;
+    
+    // Get available voltage nodes for probing (from table columns)
+    const voltageNodes = activeData.table.cols 
+        ? activeData.table.cols.filter(c => c.toLowerCase().startsWith('v(')).map(c => {
+            const match = c.match(/v\((\d+)\)/i);
+            return match ? parseInt(match[1]) : null;
+          }).filter(n => n !== null)
+        : [];
+    
+    // Get plot data for selected probe node
+    const getPlotDataForNode = (nodeId) => {
+        if (!hasTran) {
+            return { x: [], y: [], label: 'No data' };
+        }
+        
+        const timeKey = activeData.table.cols.find(c => /time/i.test(c))?.toLowerCase();
+        if (!timeKey) return { x: [], y: [], label: 'No time data' };
+        
+        // If no node selected, use first available voltage node
+        let targetNode = nodeId;
+        if (targetNode === null || targetNode === undefined) {
+            if (voltageNodes.length > 0) {
+                targetNode = voltageNodes[0];
+            } else {
+                return { x: [], y: [], label: 'No voltage nodes' };
+            }
+        }
+        
+        const voltKey = `v(${targetNode})`;
+        
+        const x = [];
+        const y = [];
+        activeData.table.rows.forEach(row => {
+            if (row[timeKey] !== undefined && row[voltKey] !== undefined) {
+                x.push(row[timeKey]);
+                y.push(row[voltKey]);
+            }
+        });
+        
+        return { x, y, label: `v(${targetNode})` };
+    };
+    
+    const plotData = getPlotDataForNode(probeNodeId);
 
     return (
         <div style={{
@@ -165,22 +208,46 @@ const SimulationOutput = ({ data, isVisible, onClose, onParsedData }) => {
                         )}
 
                         {activeTab === 'tran' && (
-                            <div style={{ height: '100%', display: 'flex' }}>
-                                <div style={{ flex: 1, height: '100%' }}>
+                            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                {/* Node selector for probing */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexShrink: 0 }}>
+                                    <label style={{ fontWeight: 500, color: '#333' }}>Probe Node:</label>
+                                    <select
+                                        value={probeNodeId ?? ''}
+                                        onChange={(e) => onProbeNodeChange && onProbeNodeChange(e.target.value ? parseInt(e.target.value) : null)}
+                                        style={{
+                                            padding: '6px 12px',
+                                            borderRadius: 4,
+                                            border: '1px solid #d9d9d9',
+                                            background: 'white',
+                                            cursor: 'pointer',
+                                            minWidth: 120
+                                        }}
+                                    >
+                                        <option value="">Select node...</option>
+                                        {voltageNodes.map(n => (
+                                            <option key={n} value={n}>Node {n} - v({n})</option>
+                                        ))}
+                                    </select>
+                                    <span style={{ color: '#888', fontSize: 12 }}>
+                                        💡 Click on a wire in the circuit to probe that node
+                                    </span>
+                                </div>
+                                <div style={{ flex: 1, minHeight: 0 }}>
                                     <Plot
                                         data={[{
-                                            x: activeData.plotData.x,
-                                            y: activeData.plotData.y,
+                                            x: plotData.x,
+                                            y: plotData.y,
                                             type: 'scatter',
                                             mode: 'lines',
                                             line: { color: '#1890ff', width: 2 },
-                                            name: 'Result'
+                                            name: plotData.label || 'Voltage'
                                         }]}
                                         layout={{
                                             autosize: true,
                                             margin: { l: 60, r: 20, t: 30, b: 50 },
                                             xaxis: { title: 'Time (s)', gridcolor: '#eee' },
-                                            yaxis: { title: 'Value', gridcolor: '#eee' },
+                                            yaxis: { title: plotData.label ? `${plotData.label} (V)` : 'Voltage (V)', gridcolor: '#eee' },
                                             plot_bgcolor: '#fff',
                                             paper_bgcolor: '#fff'
                                         }}

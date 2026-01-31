@@ -11,15 +11,21 @@ export const getRelativePointerPosition = (node) => {
 
 export const getPins = (comp) => {
   const r = comp.rotation || 0;
+  const flip = comp.flip || false; // Mirror horizontally
   const rad = (r * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  const rot = (x, y) => ({ 
-    x: Math.round(x * cos - y * sin), 
-    y: Math.round(x * sin + y * cos) 
-  });
+  
+  // Apply flip (mirror) before rotation
+  const rot = (x, y) => {
+    const fx = flip ? -x : x; // Flip X coordinate if mirrored
+    return { 
+      x: Math.round(fx * cos - y * sin), 
+      y: Math.round(fx * sin + y * cos) 
+    };
+  };
 
-  if (comp.type === 'resistor' || comp.type === 'source' || comp.type === 'capacitor') {
+  if (comp.type === 'resistor' || comp.type === 'source' || comp.type === 'capacitor' || comp.type === 'inductor' || comp.type === 'acsource') {
     const p1 = rot(-40, 0); // Left Pin
     const p2 = rot(40, 0);  // Right Pin
     return [
@@ -30,6 +36,17 @@ export const getPins = (comp) => {
     // Ground has one pin at top (0, -20 relative to center)
     const p1 = rot(0, -20);
     return [{ x: Math.round(comp.x + p1.x), y: Math.round(comp.y + p1.y) }];
+  } else if (comp.type === 'bjt_npn' || comp.type === 'bjt_pnp') {
+    // BJT has 3 pins: Base (left), Collector (top-right), Emitter (bottom-right)
+    // When flipped, left becomes right and vice versa
+    const pBase = rot(-40, 0);       // Base pin (left, or right if flipped)
+    const pCollector = rot(40, -20); // Collector pin (top-right, or top-left if flipped)
+    const pEmitter = rot(40, 20);    // Emitter pin (bottom-right, or bottom-left if flipped)
+    return [
+      { x: Math.round(comp.x + pBase.x), y: Math.round(comp.y + pBase.y) },
+      { x: Math.round(comp.x + pCollector.x), y: Math.round(comp.y + pCollector.y) },
+      { x: Math.round(comp.x + pEmitter.x), y: Math.round(comp.y + pEmitter.y) }
+    ];
   }
   return [];
 };

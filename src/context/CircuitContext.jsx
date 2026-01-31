@@ -89,6 +89,10 @@ export const CircuitProvider = ({ children }) => {
     if (type === 'resistor') { prefix = 'R'; defaultVal = '1k'; }
     else if (type === 'source') { prefix = 'V'; defaultVal = '5V'; }
     else if (type === 'ground') { prefix = 'GND'; defaultVal = '0V'; }
+    else if (type === 'inductor') { prefix = 'L'; defaultVal = '1mH'; }
+    else if (type === 'acsource') { prefix = 'VAC'; defaultVal = '5 1k'; } // amplitude frequency
+    else if (type === 'bjt_npn') { prefix = 'Q'; defaultVal = '2N2222'; } // NPN model
+    else if (type === 'bjt_pnp') { prefix = 'Q'; defaultVal = '2N2907'; } // PNP model
 
     let count = 1;
     // For ground, we don't strictly need unique numbers like GND1, GND2, but safe to keep logic
@@ -105,7 +109,8 @@ export const CircuitProvider = ({ children }) => {
     setComponents(prev => [...prev, { 
         id, type, 
         x: snap(centerX), y: snap(centerY), 
-        rotation: 0, 
+        rotation: 0,
+        flip: false, // Add flip/mirror property
         ...defaults 
     }]);
     setTool('select'); 

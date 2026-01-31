@@ -39,7 +39,11 @@ export default function Sidebar() {
             
             <button onClick={() => spawnComponent('resistor')} style={btnStyle(false)}>+ Resistor (R)</button>
             <button onClick={() => spawnComponent('capacitor')} style={btnStyle(false)}>+ Capacitor (C)</button>
-            <button onClick={() => spawnComponent('source')} style={btnStyle(false)}>+ Source (V)</button>
+            <button onClick={() => spawnComponent('inductor')} style={btnStyle(false)}>+ Inductor (L)</button>
+            <button onClick={() => spawnComponent('source')} style={btnStyle(false)}>+ DC Source (V)</button>
+            <button onClick={() => spawnComponent('acsource')} style={btnStyle(false)}>~ AC Source</button>
+            <button onClick={() => spawnComponent('bjt_npn')} style={btnStyle(false)}>⊕ NPN BJT</button>
+            <button onClick={() => spawnComponent('bjt_pnp')} style={btnStyle(false)}>⊖ PNP BJT</button>
             <button onClick={() => spawnComponent('ground')} style={btnStyle(false)}>⏚ Ground (G)</button>
         </div>
     );
