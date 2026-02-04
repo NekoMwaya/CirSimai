@@ -177,7 +177,8 @@ const CircuitEditor = () => {
     const [simVoltageDrops, setSimVoltageDrops] = useState({});
     const [simNodeMap, setSimNodeMap] = useState(null);
     const [highlightNode, setHighlightNode] = useState(null);
-    const [probeNodeId, setProbeNodeId] = useState(null); // For wire probing during transient
+    const [probeNodeIds, setProbeNodeIds] = useState([]); // Array for multiple wire probing during transient
+    const [tranEndTime, setTranEndTime] = useState(0.01); // Transient analysis end time in seconds (default 10ms)
     const [parsedSimData, setParsedSimData] = useState(null); // Store full parsed data for probing
 
     const nodes = useMemo(() => getJunctions(wires), [wires]);
@@ -325,13 +326,22 @@ const CircuitEditor = () => {
             setWires(prev => prev.filter(w => w.id !== id)); 
         } else { 
             setSelectedIds([id]); 
-            // If simulation is running, set probe to this wire's node
+            // If simulation is running, toggle probe for this wire's node
             if (showSim && simNodeMap) {
                 const wire = wires.find(w => w.id === id);
                 if (wire) {
                     const nodeId = simNodeMap.get(coordId(wire.points[0], wire.points[1]));
                     if (nodeId !== undefined) {
-                        setProbeNodeId(nodeId);
+                        setProbeNodeIds(prev => {
+                            const index = prev.indexOf(nodeId);
+                            if (index === -1) {
+                                // Add probe
+                                return [...prev, nodeId];
+                            } else {
+                                // Remove probe
+                                return prev.filter(n => n !== nodeId);
+                            }
+                        });
                     }
                 }
             }
@@ -339,13 +349,17 @@ const CircuitEditor = () => {
     };
 
     // --- SIMULATION LOGIC ---
-    const handleRunSimulation = async () => {
+    const handleRunSimulation = async (overrideTranEndTime) => {
         console.log("--- STARTING SIMULATION ---");
         
-        // Reset probe node for fresh simulation
-        setProbeNodeId(null);
+        // Use override time if provided (for re-run with new time)
+        const effectiveTranEndTime = overrideTranEndTime !== undefined ? overrideTranEndTime : tranEndTime;
+        console.log("Transient End Time:", effectiveTranEndTime, "seconds");
         
-        const { netlist: rawNetlist, nodeLocations, componentMap, nodeMap } = generateNetlist(components, wires);
+        // Reset probe nodes for fresh simulation
+        setProbeNodeIds([]);
+        
+        const { netlist: rawNetlist, nodeLocations, componentMap, nodeMap } = generateNetlist(components, wires, { tranEndTime: effectiveTranEndTime });
         setSimNodeMap(nodeMap);
         setSimNodeLocations(nodeLocations);
         setSimComponentMap(componentMap);
@@ -354,9 +368,18 @@ const CircuitEditor = () => {
 
         let netlist = rawNetlist;
         
+        // Check if circuit has diodes (need relaxed convergence options)
+        const hasDiodes = components.some(c => c.type === 'diode_ideal' || c.type === 'diode_model');
+        
         const titleLine = "* Simple Circuit Simulation\n";
         if (netlist.startsWith(titleLine)) {
-            netlist = netlist.replace(titleLine, `${titleLine}.options width=1024\n`);
+            // Add SPICE options for better convergence
+            let optionsLine = ".options width=1024";
+            if (hasDiodes) {
+                // Relaxed convergence options for diode circuits
+                optionsLine += " abstol=1e-9 reltol=0.01 vntol=1e-4 gmin=1e-12 method=gear";
+            }
+            netlist = netlist.replace(titleLine, `${titleLine}${optionsLine}\n`);
         } else {
              // Fallback if title changed
              netlist = `.options width=1024\n${netlist}`;
@@ -457,8 +480,11 @@ const CircuitEditor = () => {
                 data={simOutput}
                 onClose={() => setShowSim(false)}
                 onParsedData={handleParsedData}
-                probeNodeId={probeNodeId}
-                onProbeNodeChange={setProbeNodeId}
+                probeNodeIds={probeNodeIds}
+                onProbeNodeChange={setProbeNodeIds}
+                tranEndTime={tranEndTime}
+                onTranEndTimeChange={setTranEndTime}
+                onRerunSimulation={handleRunSimulation}
             />
             
             <Stage
@@ -526,8 +552,17 @@ const CircuitEditor = () => {
                                 voltage={simNodeValues[id]} 
                                 nodeId={parseInt(id)} 
                                 onHover={handleNodeHover}
-                                onProbe={setProbeNodeId}
-                                isProbed={probeNodeId === parseInt(id)}
+                                onProbe={(nodeId) => {
+                                    setProbeNodeIds(prev => {
+                                        const index = prev.indexOf(nodeId);
+                                        if (index === -1) {
+                                            return [...prev, nodeId];
+                                        } else {
+                                            return prev.filter(n => n !== nodeId);
+                                        }
+                                    });
+                                }}
+                                isProbed={probeNodeIds.includes(parseInt(id))}
                             />
                         )
                     ))}

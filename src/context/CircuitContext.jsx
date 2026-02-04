@@ -91,8 +91,30 @@ export const CircuitProvider = ({ children }) => {
     else if (type === 'ground') { prefix = 'GND'; defaultVal = '0V'; }
     else if (type === 'inductor') { prefix = 'L'; defaultVal = '1mH'; }
     else if (type === 'acsource') { prefix = 'VAC'; defaultVal = '5 1k'; } // amplitude frequency
-    else if (type === 'bjt_npn') { prefix = 'Q'; defaultVal = '2N2222'; } // NPN model
-    else if (type === 'bjt_pnp') { prefix = 'Q'; defaultVal = '2N2907'; } // PNP model
+    else if (type === 'diode_ideal') { prefix = 'D'; defaultVal = 'IDEAL'; } // Theoretical 0.7V diode
+    else if (type === 'diode_model') { prefix = 'D'; defaultVal = '1N4148'; } // Model diode
+    else if (type === 'bjt_npn') { prefix = 'Q'; defaultVal = 'IDEAL_NPN'; } // NPN model
+    else if (type === 'bjt_pnp') { prefix = 'Q'; defaultVal = 'IDEAL_PNP'; } // PNP model
+    else if (type === 'nmos') { prefix = 'M'; defaultVal = 'IDEAL_NMOS'; } // NMOS model
+    else if (type === 'pmos') { prefix = 'M'; defaultVal = 'IDEAL_PMOS'; } // PMOS model
+    else if (type === 'njfet') { prefix = 'J'; defaultVal = 'IDEAL_NJFET'; } // N-JFET model
+    else if (type === 'pjfet') { prefix = 'J'; defaultVal = 'IDEAL_PJFET'; } // P-JFET model
+    else if (type === 'opamp') { prefix = 'U'; defaultVal = 'IDEAL_OPAMP'; } // Op-Amp model
+    else if (type === 'opamp5') { prefix = 'U'; defaultVal = 'IDEAL_OPAMP'; } // Op-Amp with power pins
+
+    // Set default transistor parameters
+    let extraProps = {};
+    if (type === 'bjt_npn' || type === 'bjt_pnp') {
+      extraProps.beta = 100; // Default beta (current gain)
+    } else if (type === 'nmos') {
+      extraProps.vth = 1; // Default Vth for NMOS (V)
+    } else if (type === 'pmos') {
+      extraProps.vth = -1; // Default Vth for PMOS (V)
+    } else if (type === 'njfet') {
+      extraProps.vp = -2; // Default Vp (pinch-off) for N-JFET (V)
+    } else if (type === 'pjfet') {
+      extraProps.vp = 2; // Default Vp (pinch-off) for P-JFET (V)
+    }
 
     let count = 1;
     // For ground, we don't strictly need unique numbers like GND1, GND2, but safe to keep logic
@@ -111,7 +133,8 @@ export const CircuitProvider = ({ children }) => {
         x: snap(centerX), y: snap(centerY), 
         rotation: 0,
         flip: false, // Add flip/mirror property
-        ...defaults 
+        ...defaults,
+        ...extraProps
     }]);
     setTool('select'); 
     setSelectedIds([id]);

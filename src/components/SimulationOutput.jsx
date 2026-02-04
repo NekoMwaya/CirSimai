@@ -1,8 +1,40 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
 
-const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeId, onProbeNodeChange }) => {
+// Color palette for multiple traces (LTSpice-like colors)
+const TRACE_COLORS = [
+    '#1f77b4', // Blue
+    '#ff7f0e', // Orange
+    '#2ca02c', // Green
+    '#d62728', // Red
+    '#9467bd', // Purple
+    '#8c564b', // Brown
+    '#e377c2', // Pink
+    '#7f7f7f', // Gray
+    '#bcbd22', // Yellow-green
+    '#17becf', // Cyan
+];
+
+const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeIds, onProbeNodeChange, tranEndTime, onTranEndTimeChange, onRerunSimulation }) => {
     const [activeTab, setActiveTab] = useState('dc');
+    const [panelHeight, setPanelHeight] = useState(400);
+    const [isResizing, setIsResizing] = useState(false);
+    const [isMaximized, setIsMaximized] = useState(false);
+
+    const [localTranTime, setLocalTranTime] = useState(() => {
+        // Initialize based on tranEndTime, converting to appropriate unit
+        if (!tranEndTime || tranEndTime <= 0) return 10;
+        if (tranEndTime < 1e-3) return tranEndTime * 1e6; // microseconds
+        if (tranEndTime < 1) return tranEndTime * 1e3; // milliseconds
+        return tranEndTime; // seconds
+    });
+    const [tranTimeUnit, setTranTimeUnit] = useState(() => {
+        // Initialize unit based on tranEndTime magnitude
+        if (!tranEndTime || tranEndTime <= 0) return 'ms';
+        if (tranEndTime < 1e-3) return 'us';
+        if (tranEndTime < 1) return 'ms';
+        return 's';
+    });
 
     const parsed = useMemo(() => {
         if (!data || data.length === 0) return null;
@@ -82,88 +114,263 @@ const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeId,
          return { nodes, table, plotData, raw: data };
     }, [data]);
 
-    useEffect(() => {
-        if (onParsedData && parsed) {
-            onParsedData(parsed);
-        }
-    }, [parsed, onParsedData]);
-
-    if (!isVisible) return null;
-    
-    const activeData = parsed || { nodes: [], table: { rows: [], cols: [] } };
+    // Compute all derived values that hooks depend on BEFORE any conditional returns
+    const activeData = parsed || { nodes: [], table: { rows: [], cols: [] }, raw: [] };
     const hasDC = activeData.nodes.length > 0;
     const hasTran = activeData.table.rows.length > 0;
     
     // Get available voltage nodes for probing (from table columns)
-    const voltageNodes = activeData.table.cols 
-        ? activeData.table.cols.filter(c => c.toLowerCase().startsWith('v(')).map(c => {
-            const match = c.match(/v\((\d+)\)/i);
-            return match ? parseInt(match[1]) : null;
-          }).filter(n => n !== null)
-        : [];
+    const voltageNodes = useMemo(() => {
+        if (!activeData.table.cols) return [];
+        return activeData.table.cols
+            .filter(c => c.toLowerCase().startsWith('v('))
+            .map(c => {
+                const match = c.match(/v\((\d+)\)/i);
+                return match ? parseInt(match[1]) : null;
+            })
+            .filter(n => n !== null);
+    }, [activeData.table.cols]);
     
-    // Get plot data for selected probe node
-    const getPlotDataForNode = (nodeId) => {
-        if (!hasTran) {
+    // Ensure probeNodeIds is always an array
+    const selectedProbes = useMemo(() => {
+        if (Array.isArray(probeNodeIds)) return probeNodeIds;
+        if (probeNodeIds !== null && probeNodeIds !== undefined) return [probeNodeIds];
+        return [];
+    }, [probeNodeIds]);
+    
+    // Get plot data for a single node
+    const getPlotDataForNode = (nodeId, tableData) => {
+        if (!tableData || tableData.rows.length === 0) {
             return { x: [], y: [], label: 'No data' };
         }
         
-        const timeKey = activeData.table.cols.find(c => /time/i.test(c))?.toLowerCase();
+        const timeKey = tableData.cols.find(c => /time/i.test(c))?.toLowerCase();
         if (!timeKey) return { x: [], y: [], label: 'No time data' };
         
-        // If no node selected, use first available voltage node
-        let targetNode = nodeId;
-        if (targetNode === null || targetNode === undefined) {
-            if (voltageNodes.length > 0) {
-                targetNode = voltageNodes[0];
-            } else {
-                return { x: [], y: [], label: 'No voltage nodes' };
-            }
-        }
-        
-        const voltKey = `v(${targetNode})`;
+        const voltKey = `v(${nodeId})`;
         
         const x = [];
         const y = [];
-        activeData.table.rows.forEach(row => {
+        tableData.rows.forEach(row => {
             if (row[timeKey] !== undefined && row[voltKey] !== undefined) {
                 x.push(row[timeKey]);
                 y.push(row[voltKey]);
             }
         });
         
-        return { x, y, label: `v(${targetNode})` };
+        return { x, y, label: `v(${nodeId})` };
     };
     
-    const plotData = getPlotDataForNode(probeNodeId);
+    // Get all plot traces for selected probes
+    const plotTraces = useMemo(() => {
+        const tableData = activeData.table;
+        const hasTransientData = tableData && tableData.rows && tableData.rows.length > 0;
+        
+        if (!hasTransientData || selectedProbes.length === 0) {
+            // If no probes selected, show first available voltage node
+            if (voltageNodes.length > 0) {
+                const data = getPlotDataForNode(voltageNodes[0], tableData);
+                return [{
+                    x: data.x,
+                    y: data.y,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: TRACE_COLORS[0], width: 2 },
+                    name: data.label
+                }];
+            }
+            return [];
+        }
+        
+        return selectedProbes.map((nodeId, index) => {
+            const data = getPlotDataForNode(nodeId, tableData);
+            return {
+                x: data.x,
+                y: data.y,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: TRACE_COLORS[index % TRACE_COLORS.length], width: 2 },
+                name: data.label
+            };
+        });
+    }, [hasTran, selectedProbes, voltageNodes, activeData.table]);
+    
+    // Calculate appropriate time unit based on data range
+    const getTimeAxisConfig = () => {
+        if (plotTraces.length === 0 || plotTraces[0].x.length === 0) {
+            return { title: 'Time (s)', tickformat: '.3f', ticksuffix: ' s' };
+        }
+        
+        const maxTime = Math.max(...plotTraces[0].x);
+        
+        if (maxTime < 1e-6) {
+            return { 
+                title: 'Time (ns)', 
+                tickformat: '.1f',
+                multiplier: 1e9,
+                unit: 'ns'
+            };
+        } else if (maxTime < 1e-3) {
+            return { 
+                title: 'Time (µs)', 
+                tickformat: '.1f',
+                multiplier: 1e6,
+                unit: 'µs'
+            };
+        } else if (maxTime < 1) {
+            return { 
+                title: 'Time (ms)', 
+                tickformat: '.1f',
+                multiplier: 1e3,
+                unit: 'ms'
+            };
+        }
+        return { 
+            title: 'Time (s)', 
+            tickformat: '.3f',
+            multiplier: 1,
+            unit: 's'
+        };
+    };
+    
+    const timeAxisConfig = getTimeAxisConfig();
+    
+    // Handle toggle probe selection
+    const handleToggleProbe = (nodeId) => {
+        if (!onProbeNodeChange) return;
+        
+        const currentProbes = [...selectedProbes];
+        const index = currentProbes.indexOf(nodeId);
+        
+        if (index === -1) {
+            // Add probe
+            currentProbes.push(nodeId);
+        } else {
+            // Remove probe
+            currentProbes.splice(index, 1);
+        }
+        
+        onProbeNodeChange(currentProbes);
+    };
+    
+    // Handle transient time change
+    const handleApplyTranTime = () => {
+        let timeInSeconds = localTranTime;
+        if (tranTimeUnit === 'us') timeInSeconds = localTranTime / 1e6;
+        else if (tranTimeUnit === 'ms') timeInSeconds = localTranTime / 1e3;
+        // 's' stays as is
+        
+        if (onTranEndTimeChange) {
+            onTranEndTimeChange(timeInSeconds);
+        }
+        if (onRerunSimulation) {
+            // Pass the new time directly to avoid state sync issues
+            onRerunSimulation(timeInSeconds);
+        }
+    };
+
+    // useEffect must be called unconditionally (after all other hooks)
+    useEffect(() => {
+        if (onParsedData && parsed) {
+            onParsedData(parsed);
+        }
+    }, [parsed, onParsedData]);
+
+    // Handle resizing logic
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (!isResizing) return;
+            const newHeight = window.innerHeight - e.clientY;
+            // Clamp height between 50px (header only approx) and window height
+            const clamped = Math.max(40, Math.min(newHeight, window.innerHeight));
+            setPanelHeight(clamped);
+            setIsMaximized(clamped >= window.innerHeight - 10);
+        };
+
+        const handleMouseUp = () => {
+            if (isResizing) setIsResizing(false);
+            // Re-enable text selection/events if needed
+            document.body.style.userSelect = '';
+        };
+
+        if (isResizing) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+            document.body.style.userSelect = 'none'; // Prevent selection while dragging
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.userSelect = '';
+        };
+    }, [isResizing]);
+
+    // Toggle maximize
+    const toggleMaximize = () => {
+        if (isMaximized) {
+             setPanelHeight(400); // Restore
+             setIsMaximized(false);
+        } else {
+             setPanelHeight(window.innerHeight); // Maximize
+             setIsMaximized(true);
+        }
+    };
+
+    // Now we can safely do conditional return AFTER all hooks
+    if (!isVisible) return null;
 
     return (
         <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0, height: '400px',
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: isMaximized ? '100vh' : `${panelHeight}px`,
             background: 'white', borderTop: '2px solid #1890ff', zIndex: 500,
             display: 'flex', flexDirection: 'column',
             boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial'
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial',
+            transition: isResizing ? 'none' : 'height 0.2s ease-out'
         }}>
+            {/* Resize Handle Area */}
+            <div 
+                onMouseDown={() => setIsResizing(true)}
+                style={{
+                    position: 'absolute', top: -5, left: 0, right: 0, height: 10,
+                    cursor: 'ns-resize', zIndex: 10, background: 'transparent'
+                }}
+                title="Drag to resize"
+            />
+
             {/* Header / Tabs */}
             <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: '#f0f2f5', padding: '0 10px',  borderBottom: '1px solid #d9d9d9'
+                background: '#f0f2f5', padding: '0 10px',  borderBottom: '1px solid #d9d9d9',
+                flexShrink: 0
             }}>
                 <div style={{ display: 'flex' }}>
                    <TabButton label="DC Operating Point" active={activeTab === 'dc'} onClick={() => setActiveTab('dc')} disabled={!hasDC} />
                    <TabButton label="Transient Graph" active={activeTab === 'tran'} onClick={() => setActiveTab('tran')} disabled={!hasTran} />
                    <TabButton label="Raw Log" active={activeTab === 'log'} onClick={() => setActiveTab('log')} />
                 </div>
-                <button 
-                  onClick={onClose}
-                  style={{ 
-                      background: 'none', border: 'none', color: '#666', 
-                      fontSize: '16px', cursor: 'pointer', padding: '10px 15px', fontWeight: 'bold' 
-                  }}
-                >
-                  ✕
-                </button>
+                <div>
+                    <button 
+                        onClick={toggleMaximize}
+                        style={{ 
+                            background: 'none', border: 'none', color: '#666', 
+                            fontSize: '14px', cursor: 'pointer', padding: '10px 10px', fontWeight: 'bold' 
+                        }}
+                        title={isMaximized ? "Restore" : "Maximize"}
+                    >
+                        {isMaximized ? '❐' : '□'}
+                    </button>
+                    <button 
+                      onClick={onClose}
+                      style={{ 
+                          background: 'none', border: 'none', color: '#666', 
+                          fontSize: '16px', cursor: 'pointer', padding: '10px 15px', fontWeight: 'bold' 
+                      }}
+                    >
+                      ✕
+                    </button>
+                </div>
             </div>
 
             {/* Content & Tab Panels (Same as before) */}
@@ -209,47 +416,194 @@ const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeId,
 
                         {activeTab === 'tran' && (
                             <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                {/* Node selector for probing */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexShrink: 0 }}>
-                                    <label style={{ fontWeight: 500, color: '#333' }}>Probe Node:</label>
-                                    <select
-                                        value={probeNodeId ?? ''}
-                                        onChange={(e) => onProbeNodeChange && onProbeNodeChange(e.target.value ? parseInt(e.target.value) : null)}
+                                {/* Transient time control */}
+                                <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: 10, 
+                                    marginBottom: 10, 
+                                    padding: '8px 12px',
+                                    background: '#f8f9fa',
+                                    borderRadius: 6,
+                                    flexShrink: 0 
+                                }}>
+                                    <label style={{ fontWeight: 500, color: '#333', fontSize: 12 }}>End Time:</label>
+                                    <input
+                                        type="number"
+                                        value={localTranTime}
+                                        onChange={(e) => setLocalTranTime(parseFloat(e.target.value) || 0)}
                                         style={{
-                                            padding: '6px 12px',
+                                            width: 80,
+                                            padding: '4px 8px',
                                             borderRadius: 4,
                                             border: '1px solid #d9d9d9',
-                                            background: 'white',
-                                            cursor: 'pointer',
-                                            minWidth: 120
+                                            fontSize: 12
+                                        }}
+                                        min="0.001"
+                                        step="1"
+                                    />
+                                    <select
+                                        value={tranTimeUnit}
+                                        onChange={(e) => setTranTimeUnit(e.target.value)}
+                                        style={{
+                                            padding: '4px 8px',
+                                            borderRadius: 4,
+                                            border: '1px solid #d9d9d9',
+                                            fontSize: 12,
+                                            cursor: 'pointer'
                                         }}
                                     >
-                                        <option value="">Select node...</option>
-                                        {voltageNodes.map(n => (
-                                            <option key={n} value={n}>Node {n} - v({n})</option>
-                                        ))}
+                                        <option value="us">µs</option>
+                                        <option value="ms">ms</option>
+                                        <option value="s">s</option>
                                     </select>
-                                    <span style={{ color: '#888', fontSize: 12 }}>
-                                        💡 Click on a wire in the circuit to probe that node
+                                    <button
+                                        onClick={handleApplyTranTime}
+                                        style={{
+                                            padding: '4px 12px',
+                                            borderRadius: 4,
+                                            border: 'none',
+                                            background: '#1890ff',
+                                            color: 'white',
+                                            fontSize: 12,
+                                            fontWeight: 500,
+                                            cursor: 'pointer',
+                                            transition: 'background 0.2s'
+                                        }}
+                                        onMouseOver={(e) => e.target.style.background = '#40a9ff'}
+                                        onMouseOut={(e) => e.target.style.background = '#1890ff'}
+                                    >
+                                        🔄 Re-run
+                                    </button>
+                                    <span style={{ color: '#888', fontSize: 11, marginLeft: 10 }}>
+                                        Adjust simulation duration and re-run
                                     </span>
                                 </div>
+                                
+                                {/* Node selector for probing - Multi-select */}
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+                                    <label style={{ fontWeight: 500, color: '#333', paddingTop: 6 }}>Probe Nodes:</label>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>
+                                        {voltageNodes.map((n, index) => {
+                                            const isSelected = selectedProbes.includes(n);
+                                            const colorIndex = selectedProbes.indexOf(n);
+                                            return (
+                                                <button
+                                                    key={n}
+                                                    onClick={() => handleToggleProbe(n)}
+                                                    style={{
+                                                        padding: '4px 10px',
+                                                        borderRadius: 4,
+                                                        border: isSelected 
+                                                            ? `2px solid ${TRACE_COLORS[colorIndex % TRACE_COLORS.length]}`
+                                                            : '1px solid #d9d9d9',
+                                                        background: isSelected 
+                                                            ? `${TRACE_COLORS[colorIndex % TRACE_COLORS.length]}20`
+                                                            : 'white',
+                                                        color: isSelected 
+                                                            ? TRACE_COLORS[colorIndex % TRACE_COLORS.length]
+                                                            : '#666',
+                                                        cursor: 'pointer',
+                                                        fontWeight: isSelected ? 600 : 400,
+                                                        fontSize: 12,
+                                                        transition: 'all 0.15s'
+                                                    }}
+                                                >
+                                                    {isSelected && <span style={{ marginRight: 4 }}>●</span>}
+                                                    v({n})
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <span style={{ color: '#888', fontSize: 11, paddingTop: 6 }}>
+                                        💡 Click nodes to toggle • Click wires in circuit to probe
+                                    </span>
+                                </div>
+                                
+                                {/* Selected probes legend */}
+                                {selectedProbes.length > 0 && (
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        gap: 15, 
+                                        marginBottom: 8, 
+                                        fontSize: 12,
+                                        color: '#555',
+                                        flexWrap: 'wrap'
+                                    }}>
+                                        {selectedProbes.map((nodeId, index) => (
+                                            <span key={nodeId} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                <span style={{ 
+                                                    width: 12, 
+                                                    height: 3, 
+                                                    background: TRACE_COLORS[index % TRACE_COLORS.length],
+                                                    borderRadius: 1
+                                                }}></span>
+                                                <span>v({nodeId})</span>
+                                                <button
+                                                    onClick={() => handleToggleProbe(nodeId)}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: '#999',
+                                                        cursor: 'pointer',
+                                                        padding: '0 2px',
+                                                        fontSize: 10
+                                                    }}
+                                                >
+                                                    ✕
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                
                                 <div style={{ flex: 1, minHeight: 0 }}>
                                     <Plot
-                                        data={[{
-                                            x: plotData.x,
-                                            y: plotData.y,
-                                            type: 'scatter',
-                                            mode: 'lines',
-                                            line: { color: '#1890ff', width: 2 },
-                                            name: plotData.label || 'Voltage'
-                                        }]}
+                                        data={plotTraces}
                                         layout={{
                                             autosize: true,
-                                            margin: { l: 60, r: 20, t: 30, b: 50 },
-                                            xaxis: { title: 'Time (s)', gridcolor: '#eee' },
-                                            yaxis: { title: plotData.label ? `${plotData.label} (V)` : 'Voltage (V)', gridcolor: '#eee' },
+                                            margin: { l: 70, r: 30, t: 30, b: 60 },
+                                            xaxis: { 
+                                                title: {
+                                                    text: timeAxisConfig.title,
+                                                    font: { size: 13, color: '#333' }
+                                                },
+                                                gridcolor: '#eee',
+                                                linecolor: '#ccc',
+                                                tickfont: { size: 11 },
+                                                zeroline: true,
+                                                zerolinecolor: '#999',
+                                                zerolinewidth: 1
+                                            },
+                                            yaxis: { 
+                                                title: {
+                                                    text: 'Voltage (V)',
+                                                    font: { size: 13, color: '#333' }
+                                                },
+                                                gridcolor: '#eee',
+                                                linecolor: '#ccc',
+                                                tickfont: { size: 11 },
+                                                zeroline: true,
+                                                zerolinecolor: '#999',
+                                                zerolinewidth: 1
+                                            },
                                             plot_bgcolor: '#fff',
-                                            paper_bgcolor: '#fff'
+                                            paper_bgcolor: '#fff',
+                                            showlegend: selectedProbes.length > 1,
+                                            legend: {
+                                                orientation: 'h',
+                                                yanchor: 'bottom',
+                                                y: 1.02,
+                                                xanchor: 'right',
+                                                x: 1,
+                                                font: { size: 11 }
+                                            },
+                                            hovermode: 'x unified'
+                                        }}
+                                        config={{
+                                            displayModeBar: true,
+                                            displaylogo: false,
+                                            modeBarButtonsToRemove: ['lasso2d', 'select2d']
                                         }}
                                         useResizeHandler={true}
                                         style={{ width: '100%', height: '100%' }}
