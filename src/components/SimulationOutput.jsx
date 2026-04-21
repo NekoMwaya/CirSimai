@@ -323,7 +323,7 @@ const SimulationOutput = ({ data, isVisible, onClose, onParsedData, probeNodeIds
     return (
         <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, height: isMaximized ? '100vh' : `${panelHeight}px`,
-            background: 'white', borderTop: '2px solid #1890ff', zIndex: 500,
+            background: 'white', color: '#333', borderTop: '2px solid #1890ff', zIndex: 500,
             display: 'flex', flexDirection: 'column',
             boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial',

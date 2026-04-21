@@ -7,7 +7,7 @@ export const useCircuit = () => useContext(CircuitContext);
 
 export const CircuitProvider = ({ children }) => {
   // --- STATE ---
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [tool, setTool] = useState('select');
   const [wires, setWires] = useState([]);
   const [components, setComponents] = useState([]);
