@@ -2,6 +2,7 @@
 // Replaces the Vite dev-server middleware that used to live in vite.config.js
 
 import { GoogleGenAI } from '@google/genai'
+import { createClient } from '@supabase/supabase-js'
 import { retrieveClosestExamples, getExamplesPromptBlock } from '../ai/semanticRetrieval.js'
 
 // ---------------------------------------------------------------------------
@@ -217,6 +218,7 @@ function accumulateChunkDelta(nextText, previousText) {
 
 function buildGenerationConfig(includeThinking) {
   const baseConfig = {
+    maxOutputTokens: 8192,
     tools: [{ googleSearch: {} }]
   }
 
@@ -295,6 +297,45 @@ function writeSseEvent(res, eventName, payload) {
 }
 
 // ---------------------------------------------------------------------------
+// Usage tracking
+// ---------------------------------------------------------------------------
+
+async function trackUsage(req, responseObj) {
+  if (!req.userContext || req.userContext.isDev) return
+
+  // Extract total token count from the response or stream completion
+  let tokensUsed = 0
+  if (responseObj?.usageMetadata?.totalTokenCount) {
+    tokensUsed = responseObj.usageMetadata.totalTokenCount
+  } else if (responseObj?.candidates?.[0]?.tokenCount) {
+    tokensUsed = responseObj.candidates[0].tokenCount
+  } else {
+    // Fallback estimation (roughly 1 token per 4 chars) if metadata is missing
+    const text = responseObj?.text || ''
+    tokensUsed = Math.ceil(text.length / 4)
+  }
+
+  if (tokensUsed <= 0) return
+
+  const { user, today, currentUsage, supabase } = req.userContext
+  const newUsage = currentUsage + tokensUsed
+
+  // Upsert the new usage into Supabase
+  const { error } = await supabase
+    .from('daily_token_usage')
+    .upsert(
+      { user_id: user.id, date: today, tokens_used: newUsage },
+      { onConflict: 'user_id,date' }
+    )
+
+  if (error) {
+    console.error('Failed to track token usage:', error)
+  } else {
+    req.userContext.currentUsage = newUsage
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Vercel Serverless Function handler
 // ---------------------------------------------------------------------------
 
@@ -302,7 +343,7 @@ export default async function handler(req, res) {
   // CORS headers – allow the frontend origin (update if you use a custom domain)
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   if (req.method === 'OPTIONS') {
     res.status(204).end()
@@ -321,6 +362,58 @@ export default async function handler(req, res) {
   }
 
   try {
+    // 1. Verify User Session
+    const authHeader = req.headers.authorization
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Unauthorized: Missing or invalid Authorization header.' })
+      return
+    }
+    const token = authHeader.split(' ')[1]
+
+    const supabaseUrl = process.env.VITE_SUPABASE_URL
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+    if (!supabaseUrl || !supabaseKey) {
+      res.status(500).json({ error: 'Missing Supabase environment variables on server.' })
+      return
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+
+    if (authError || !user) {
+      res.status(401).json({ error: 'Unauthorized: Invalid token.' })
+      return
+    }
+
+    const isDev = user.email === 'rhotonsia@gmail.com'
+    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+    const DAILY_LIMIT = 8192
+
+    // 2. Check Daily Limit (skip for dev)
+    let currentUsage = 0
+    if (!isDev) {
+      const { data: usageData, error: usageError } = await supabase
+        .from('daily_token_usage')
+        .select('tokens_used')
+        .eq('user_id', user.id)
+        .eq('date', today)
+        .single()
+
+      if (usageError && usageError.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error('Error fetching usage:', usageError)
+      } else if (usageData) {
+        currentUsage = usageData.tokens_used
+      }
+
+      if (currentUsage >= DAILY_LIMIT) {
+        res.status(403).json({ error: `Daily limit reached. You have used ${currentUsage}/${DAILY_LIMIT} tokens today.` })
+        return
+      }
+    }
+
+    // Attach user metadata to request for tracking after generation
+    req.userContext = { user, isDev, today, currentUsage, supabase }
+
     // Vercel automatically parses JSON bodies – body is already an object.
     const body = req.body || {}
 
@@ -453,6 +546,8 @@ export default async function handler(req, res) {
 
           const generatedNetlist = String(fullText || '').trim()
 
+          await trackUsage(req, { text: fullText })
+
           writeSseEvent(res, 'complete', {
             text: generatedNetlist,
             generatedNetlist,
@@ -480,6 +575,8 @@ export default async function handler(req, res) {
       const generatedNetlist = String(response.text || '').trim()
       const thinking = extractThinkingText(response)
       console.log('[AI DEBUG] Gemma output netlist:', generatedNetlist)
+
+      await trackUsage(req, response)
 
       res.status(200).json({
         text: generatedNetlist,
@@ -556,6 +653,8 @@ export default async function handler(req, res) {
           const rawText = String(fullText || '').trim()
           const parsed = tryParseValidationJson(rawText)
 
+          await trackUsage(req, { text: fullText })
+
           const validationPayload = parsed || {
             intended: false,
             confidence: 0.3,
@@ -595,6 +694,8 @@ export default async function handler(req, res) {
       const rawText = String(response.text || '').trim()
       const thinking = extractThinkingText(response)
       console.log('[AI DEBUG] Validation model output:', rawText)
+
+      await trackUsage(req, response)
 
       const parsed = tryParseValidationJson(rawText)
 
@@ -676,6 +777,8 @@ export default async function handler(req, res) {
           })
         }
 
+        await trackUsage(req, { text: fullText })
+
         writeSseEvent(res, 'complete', {
           text: fullText,
           thinking: fullThinking,
@@ -717,6 +820,8 @@ export default async function handler(req, res) {
 
     const thinking = extractThinkingText(response)
     console.log('[AI DEBUG] Chat output:', String(response.text || ''))
+
+    await trackUsage(req, response)
 
     res.status(200).json({ text: response.text || '', thinking, usedModel })
   } catch (error) {

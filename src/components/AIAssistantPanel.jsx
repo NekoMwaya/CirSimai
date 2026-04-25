@@ -8,6 +8,7 @@ import rehypeKatex from 'rehype-katex';
 import { useCircuit } from '../context/CircuitContext';
 import { spice } from '../utils/spiceEngine';
 import { netlistToDraftSchematic } from '../utils/aiNetlistLayout';
+import { supabase } from '../supabaseClient';
 
 const MODELS = [
     'gemma-4-26b-a4b-it',
@@ -271,9 +272,22 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
         const signal = handlers.signal;
         console.log('[AI DEBUG] Frontend streaming request payload:', payload);
 
+        let accessToken = null;
+        try {
+            const { data } = await supabase.auth.getSession();
+            accessToken = data?.session?.access_token;
+        } catch (err) {
+            console.error('Failed to get Supabase session', err);
+        }
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (accessToken) {
+            headers['Authorization'] = `Bearer ${accessToken}`;
+        }
+
         const response = await fetch('/api/ai-chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ ...payload, stream: true }),
             signal
         });
