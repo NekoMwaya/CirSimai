@@ -188,6 +188,7 @@ export const getTransistorPinLabelPos = (rotation, flip = false) => {
 };
 
 export const getJunctions = (wires) => {
+  const hasStrictConnectivity = wires.some(w => w?.strictConnectivity === true);
   const candidates = new Set();
   wires.forEach(w => {
     candidates.add(`${w.points[0]},${w.points[1]}`);
@@ -200,7 +201,7 @@ export const getJunctions = (wires) => {
       wires.forEach(w => {
           const [x1, y1, x2, y2] = w.points;
           if ((x1 === cx && y1 === cy) || (x2 === cx && y2 === cy)) degree += 1;
-          else {
+          else if (!hasStrictConnectivity) {
              const isVertical = x1 === x2 && x1 === cx;
              const isHorizontal = y1 === y2 && y1 === cy;
              if (isVertical && cy > Math.min(y1, y2) && cy < Math.max(y1, y2)) degree += 2;

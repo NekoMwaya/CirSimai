@@ -7,7 +7,7 @@ import Sidebar from '../components/Sidebar';
 import PropertiesPanel from '../components/PropertiesPanel';
 import AIAssistantPanel from '../components/AIAssistantPanel';
 import { snap, getRelativePointerPosition, getJunctions, getPins } from '../utils/math';
-import { generateNetlist } from '../utils/networkAnalysis';
+import { generateNetlist, buildLayoutAnnotatedNetlist } from '../utils/networkAnalysis';
 
 import { spice } from '../utils/spiceEngine';
 import SimulationOutputOriginal from '../components/SimulationOutput';
@@ -157,6 +157,7 @@ const CircuitEditor = () => {
         components, setComponents,
         selectedIds,
         setSelectedIds,
+        isColumnRowSnapEnabled,
         spawnComponent,
         undo, redo,
         saveState
@@ -187,7 +188,8 @@ const CircuitEditor = () => {
 
     const assistantNetlist = useMemo(() => {
         try {
-            return generateNetlist(components, wires, { tranEndTime }).netlist;
+            const { netlist } = generateNetlist(components, wires, { tranEndTime });
+            return buildLayoutAnnotatedNetlist(components, netlist);
         } catch {
             return '* Simple Circuit Simulation\n.OP\n.TRAN 1m 100m\n.END';
         }
@@ -395,7 +397,12 @@ const CircuitEditor = () => {
              netlist = `.options width=1024\n${netlist}`;
         }
 
-        console.log("Netlist:", netlist);
+        if (isColumnRowSnapEnabled) {
+            const layoutNetlist = buildLayoutAnnotatedNetlist(components, netlist);
+            console.log('Netlist with [LAYOUT] C/R/ROT comments:\n' + layoutNetlist);
+        } else {
+            console.log('Netlist:', netlist);
+        }
 
         setShowSim(true);
         setSimOutput(["Initializing Simulator...", "Please wait..."]);

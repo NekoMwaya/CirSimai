@@ -69,7 +69,9 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
         tool, setTool, 
         isDarkMode, setIsDarkMode,
         theme,
-        spawnComponent
+        spawnComponent,
+        isColumnRowSnapEnabled,
+        setIsColumnRowSnapEnabled
     } = useCircuit();
 
     const gradientBg = isDarkMode ? 'linear-gradient(90deg, #4a007d, #004e92, #004989)' : 'linear-gradient(90deg, #c2a8f7, #5ce1e6)';
@@ -158,6 +160,18 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setTool('select')} style={toolBtnStyle(tool === 'select')}>👆 Select (Esc)</motion.button>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setTool('wire')} style={toolBtnStyle(tool === 'wire')}>✏️ Wire (W)</motion.button>
                 <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setTool('delete')} style={toolBtnStyle(tool === 'delete')}>✂️ Delete (Del)</motion.button>
+                <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setIsColumnRowSnapEnabled(prev => !prev)}
+                    style={{
+                        ...toolBtnStyle(isColumnRowSnapEnabled),
+                        padding: '7px 10px',
+                        fontSize: 11
+                    }}
+                >
+                    ▦ Column and Row snap: {isColumnRowSnapEnabled ? 'ON' : 'OFF'}
+                </motion.button>
             </div>
             
             <div style={{height: 1, background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', margin: '12px 0'}}></div>

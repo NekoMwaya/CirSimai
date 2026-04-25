@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
-import { snap } from '../utils/math';
+import { snap, getPins } from '../utils/math';
+import { snapCanvasToLayoutGrid } from '../utils/aiLayoutGrid';
 
 const CircuitContext = createContext();
 
@@ -14,6 +15,7 @@ export const CircuitProvider = ({ children }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1);
+  const [isColumnRowSnapEnabled, setIsColumnRowSnapEnabled] = useState(false);
 
   // --- HISTORY STATE ---
   const [history, setHistory] = useState([]);
@@ -32,41 +34,75 @@ export const CircuitProvider = ({ children }) => {
 
   // --- HISTORY LOGIC ---
   const saveState = useCallback(() => {
-      setHistory(prev => {
-          const newHistory = [...prev, { wires, components }];
-          if (newHistory.length > 30) newHistory.shift(); 
-          return newHistory;
-      });
-      setFuture([]);
+    setHistory(prev => {
+      const newHistory = [...prev, { wires, components }];
+      if (newHistory.length > 30) newHistory.shift();
+      return newHistory;
+    });
+    setFuture([]);
   }, [wires, components]);
 
   const undo = useCallback(() => {
-      if (history.length === 0) return;
-      const previous = history[history.length - 1];
-      const newHistory = history.slice(0, -1);
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
 
-      setFuture(prev => [{ wires, components }, ...prev]);
-      setWires(previous.wires);
-      setComponents(previous.components);
-      setHistory(newHistory);
-      setSelectedIds([]);
+    setFuture(prev => [{ wires, components }, ...prev]);
+    setWires(previous.wires);
+    setComponents(previous.components);
+    setHistory(newHistory);
+    setSelectedIds([]);
   }, [history, wires, components]);
 
   const redo = useCallback(() => {
-      if (future.length === 0) return;
-      const next = future[0];
-      const newFuture = future.slice(1);
+    if (future.length === 0) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
 
-      setHistory(prev => [...prev, { wires, components }]);
-      setWires(next.wires);
-      setComponents(next.components);
-      setFuture(newFuture);
-      setSelectedIds([]);
+    setHistory(prev => [...prev, { wires, components }]);
+    setWires(next.wires);
+    setComponents(next.components);
+    setFuture(newFuture);
+    setSelectedIds([]);
   }, [future, wires, components]);
 
   // --- ACTIONS ---
   const updateComponent = (id, updates) => {
-      setComponents(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    setComponents(prev => {
+      const nextComponents = prev.map(c => {
+        if (c.id !== id) return c;
+
+        const merged = { ...c, ...updates };
+        if (typeof merged.x === 'number' && typeof merged.y === 'number') {
+          if (isColumnRowSnapEnabled) {
+            const snapped = snapCanvasToLayoutGrid(merged.x, merged.y);
+            merged.x = snapped.x;
+            merged.y = snapped.y;
+          } else {
+            merged.x = snap(merged.x);
+            merged.y = snap(merged.y);
+          }
+        }
+        return merged;
+      });
+      const moved = nextComponents.find(c => c.id === id);
+
+      if (moved) {
+        const movedPins = getPins(moved);
+        setWires(prevWires => prevWires.map(wire => {
+          if (!wire?.startAnchor || wire.startAnchor.componentId !== id) return wire;
+          const pin = movedPins[wire.startAnchor.pinIndex];
+          if (!pin) return wire;
+
+          return {
+            ...wire,
+            points: [pin.x, pin.y, wire.points[2], wire.points[3]]
+          };
+        }));
+      }
+
+      return nextComponents;
+    });
   };
 
   const deleteSelection = () => {
@@ -82,10 +118,10 @@ export const CircuitProvider = ({ children }) => {
     const invScale = 1 / stageScale;
     const centerX = (-stagePos.x + window.innerWidth / 2) * invScale;
     const centerY = (-stagePos.y + window.innerHeight / 2) * invScale;
-       // FIX: Ensure unique labels by checking if label already exists
+    // FIX: Ensure unique labels by checking if label already exists
     let prefix = 'C';
     let defaultVal = '1uF';
-    
+
     if (type === 'resistor') { prefix = 'R'; defaultVal = '1k'; }
     else if (type === 'source') { prefix = 'V'; defaultVal = '5V'; }
     else if (type === 'ground') { prefix = 'GND'; defaultVal = '0V'; }
@@ -118,25 +154,29 @@ export const CircuitProvider = ({ children }) => {
 
     let count = 1;
     // For ground, we don't strictly need unique numbers like GND1, GND2, but safe to keep logic
-    while(components.some(c => c.label === `${prefix}${count}`)) {
-        count++;
-    }
-    
-    const defaults = { value: defaultVal, label: `${prefix}${count}` };
-    if (type === 'ground') {
-        defaults.label = 'GND'; // Force simplified label for ground
-        defaults.value = '';
+    while (components.some(c => c.label === `${prefix}${count}`)) {
+      count++;
     }
 
-    setComponents(prev => [...prev, { 
-        id, type, 
-        x: snap(centerX), y: snap(centerY), 
-        rotation: 0,
-        flip: false, // Add flip/mirror property
-        ...defaults,
-        ...extraProps
+    const defaults = { value: defaultVal, label: `${prefix}${count}` };
+    if (type === 'ground') {
+      defaults.label = 'GND'; // Force simplified label for ground
+      defaults.value = '';
+    }
+
+    const spawnPos = isColumnRowSnapEnabled
+      ? snapCanvasToLayoutGrid(centerX, centerY)
+      : { x: snap(centerX), y: snap(centerY) };
+
+    setComponents(prev => [...prev, {
+      id, type,
+      x: spawnPos.x, y: spawnPos.y,
+      rotation: 0,
+      flip: false, // Add flip/mirror property
+      ...defaults,
+      ...extraProps
     }]);
-    setTool('select'); 
+    setTool('select');
     setSelectedIds([id]);
   };
 
@@ -148,6 +188,7 @@ export const CircuitProvider = ({ children }) => {
       components, setComponents, updateComponent, spawnComponent, deleteSelection,
       selectedIds, setSelectedIds,
       stagePos, setStagePos, stageScale, setStageScale,
+      isColumnRowSnapEnabled, setIsColumnRowSnapEnabled,
       undo, redo, saveState
     }}>
       {children}

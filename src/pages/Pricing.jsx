@@ -3,6 +3,10 @@ import Header from '../components/Header';
 import { Check } from 'lucide-react';
 import circuitBg from '../assets/circuit-bg.jpg';
 
+// Stripe Payment Links are stored in .env.local — never hardcoded here
+const STRIPE_PRO_URL = import.meta.env.VITE_STRIPE_PRO_URL;
+const STRIPE_TEAM_URL = import.meta.env.VITE_STRIPE_TEAM_URL;
+
 export default function Pricing() {
   const checkStyle = { color: '#5ce1e6', marginRight: '12px' };
   const getCardStyle = (highlight) => ({
@@ -22,6 +26,16 @@ export default function Pricing() {
   const thStyle = { padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'left', fontWeight: 'bold', fontSize: '16px', background: 'rgba(255,255,255,0.02)' };
   const tdStyle = { padding: '16px 24px', borderBottom: '1px solid rgba(255,255,255,0.05)', textAlign: 'left', color: '#cbd5e1', fontSize: '15px' };
 
+  // Shared button base style (used inline below)
+  const ctaBtnBase = {
+    display: 'block', width: '100%', padding: '12px', borderRadius: '8px',
+    border: 'none', fontWeight: 'bold', cursor: 'pointer', marginBottom: '32px',
+    fontSize: '14px', fontFamily: 'Inter, sans-serif', textDecoration: 'none',
+    textAlign: 'center', transition: 'opacity 0.2s, transform 0.15s',
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    boxSizing: 'border-box',
+  };
+
   return (
     <div style={{ minHeight: '100vh', background: '#020617', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       <Header />
@@ -38,6 +52,7 @@ export default function Pricing() {
         {/* 3 Pricing Cards */}
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '80px' }}>
             
+            {/* Free tier */}
             <div style={getCardStyle(false)}>
                 <div style={{ background: 'rgba(255,255,255,0.1)', display: 'inline-block', padding: '4px 12px', borderRadius: '4px', fontWeight: 'bold', marginBottom: '16px' }}>Free</div>
                 <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '32px' }}>Conceptualize anything and bring your ideas to life. No cost, but with limits.</p>
@@ -45,7 +60,12 @@ export default function Pricing() {
                     <span style={{ fontSize: '40px', fontWeight: '800' }}>$0</span> <span style={{ fontSize: '14px', color: '#94a3b8' }}>USD</span>
                     <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>/month</div>
                 </div>
-                <button style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#fff', color: '#000', fontWeight: 'bold', cursor: 'pointer', marginBottom: '32px' }}>Get started</button>
+                {/* Free tier — goes to /auth to create an account */}
+                <a href="/#/auth" style={{ ...ctaBtnBase, background: '#fff', color: '#000' }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}>
+                  Get started
+                </a>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}><Check size={16} style={checkStyle} /> 1 project limit</div>
@@ -54,6 +74,7 @@ export default function Pricing() {
                 </div>
             </div>
 
+            {/* Pro tier — opens Stripe checkout */}
             <div style={getCardStyle(true)}>
                 <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '4px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid rgba(255,255,255,0.2)' }}>CirSimAI <span style={{color: '#5ce1e6'}}>Pro</span></div>
                 <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '32px' }}>Complete freedom with unlimited access to build schemas of any size.</p>
@@ -61,7 +82,18 @@ export default function Pricing() {
                     <span style={{ fontSize: '40px', fontWeight: '800' }}>$40</span> <span style={{ fontSize: '14px', color: '#94a3b8' }}>USD</span>
                     <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>/month</div>
                 </div>
-                <button style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#fff', color: '#000', fontWeight: 'bold', cursor: 'pointer', marginBottom: '32px' }}>Start 7-day free trial</button>
+
+                {/* ★ Stripe Payment Link — opens Stripe's hosted checkout page in a new tab */}
+                <a
+                  href={STRIPE_PRO_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...ctaBtnBase, background: '#fff', color: '#000' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  Start 7-day free trial →
+                </a>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}><Check size={16} style={checkStyle} /> Unlimited Projects</div>
@@ -71,6 +103,7 @@ export default function Pricing() {
                 </div>
             </div>
 
+            {/* Team tier — opens Stripe checkout */}
             <div style={getCardStyle(false)}>
                 <div style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '4px', fontWeight: 'bold', marginBottom: '16px', border: '1px solid rgba(255,255,255,0.2)' }}>CirSimAI <span style={{color: '#c2a8f7'}}>Team</span></div>
                 <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '32px' }}>Bring your team over with all Pro access and enhanced collaboration.</p>
@@ -78,7 +111,18 @@ export default function Pricing() {
                     <span style={{ fontSize: '40px', fontWeight: '800' }}>$36</span> <span style={{ fontSize: '14px', color: '#94a3b8' }}>USD</span>
                     <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>/month per person (Min 3)</div>
                 </div>
-                <button style={{ width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff', fontWeight: 'bold', cursor: 'pointer', marginBottom: '32px' }}>Start 7-day free trial</button>
+
+                {/* ★ Stripe Payment Link — opens Stripe's hosted checkout page in a new tab */}
+                <a
+                  href={STRIPE_TEAM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...ctaBtnBase, background: 'rgba(255,255,255,0.1)', color: '#fff' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                >
+                  Start 7-day free trial →
+                </a>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '14px' }}>
                      <div style={{ color: '#fff', fontWeight: 'bold' }}>Everything in Pro +</div>
@@ -90,7 +134,7 @@ export default function Pricing() {
 
         </div>
 
-        {/* Feature Table */}
+        {/* Feature Comparison Table — unchanged */}
         <h3 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '24px', textAlign: 'left' }}>Compare Features</h3>
         <div style={{ background: 'rgba(15, 23, 42, 0.7)', borderRadius: '16px', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -113,6 +157,15 @@ export default function Pricing() {
                     <tr><td style={tdStyle}>Priority Customer Support</td><td style={tdStyle}>{CrossIcon}</td><td style={tdStyle}>{CheckIcon}</td><td style={tdStyle}>{CheckIcon}</td></tr>
                 </tbody>
             </table>
+        </div>
+
+        {/* Test mode notice for competition judges */}
+        <div style={{
+          marginTop: '40px', padding: '16px 24px', borderRadius: '12px',
+          background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.2)',
+          color: '#fbbf24', fontSize: '14px', textAlign: 'center', lineHeight: '1.6'
+        }}>
+          🔒 <strong>Stripe Test Mode active.</strong> Use card number <code style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px' }}>4242 4242 4242 4242</code>, any future expiry, and any 3-digit CVC to complete a test checkout.
         </div>
 
       </div>

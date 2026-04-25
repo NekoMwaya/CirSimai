@@ -42,6 +42,22 @@ Or create `.env.local` in the project root:
 GEMINI_API_KEY=your_api_key_here
 ```
 
+Recommended safer setup for localhost:
+
+```bash
+cp .env.example .env.local
+```
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+Then edit `.env.local` and add your real key. Keep `.env.local` private.
+
+Note: The dev AI endpoint reads `GEMINI_API_KEY` on the server side in Vite, so this works locally without exposing the key to browser code.
+
 3. Start the app:
 
 ```bash

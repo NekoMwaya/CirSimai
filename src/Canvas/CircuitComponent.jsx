@@ -2,12 +2,13 @@ import React from 'react';
 import { Group, Rect, Line, Circle, Text } from 'react-konva';
 import { getTextPos, getLabelPos, snap } from '../utils/math';
 import { useCircuit } from '../context/CircuitContext';
+import { snapCanvasToLayoutGrid } from '../utils/aiLayoutGrid';
 
 const CircuitComponent = ({ data }) => {
     // 1. Get stagePos and stageScale from context
     const { 
         theme, setSelectedIds, tool, selectedIds, updateComponent, setComponents,
-        stagePos, stageScale, saveState
+        stagePos, stageScale, saveState, isColumnRowSnapEnabled
     } = useCircuit();
     
     const isSelected = selectedIds.includes(data.id);
@@ -15,9 +16,13 @@ const CircuitComponent = ({ data }) => {
     const lblPos = getLabelPos(data.rotation);
 
     const handleDrag = (e) => {
+        const snapped = isColumnRowSnapEnabled
+            ? snapCanvasToLayoutGrid(e.target.x(), e.target.y())
+            : { x: snap(e.target.x()), y: snap(e.target.y()) };
+
         updateComponent(data.id, { 
-            x: snap(e.target.x()), 
-            y: snap(e.target.y()) 
+            x: snapped.x,
+            y: snapped.y
         });
     };
 
@@ -58,10 +63,13 @@ const CircuitComponent = ({ data }) => {
             dragBoundFunc={(pos) => {
                 const relativeX = (pos.x - stagePos.x) / stageScale;
                 const relativeY = (pos.y - stagePos.y) / stageScale;
+                const snapped = isColumnRowSnapEnabled
+                    ? snapCanvasToLayoutGrid(relativeX, relativeY)
+                    : { x: snap(relativeX), y: snap(relativeY) };
                 
                 return {
-                    x: snap(relativeX) * stageScale + stagePos.x,
-                    y: snap(relativeY) * stageScale + stagePos.y
+                    x: snapped.x * stageScale + stagePos.x,
+                    y: snapped.y * stageScale + stagePos.y
                 };
             }}
 

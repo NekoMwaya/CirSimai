@@ -23,16 +23,35 @@ export default function Enterprise() {
           The #1 choice for global engineering teams to launch faster, scale smarter, and drive ROI across circuit design, embedded deployment, and architectural review.
         </p>
 
-        <button style={{
-            background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)',
-            color: '#000', border: 'none', padding: '16px 32px',
-            borderRadius: '30px', fontSize: '18px', fontWeight: '700',
-            cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px',
-            boxShadow: '0 10px 30px rgba(92, 225, 230, 0.3)',
-            transition: 'transform 0.2s'
-        }} onMouseEnter={(e) => e.currentTarget.style.transform='scale(1.05)'} onMouseLeave={(e) => e.currentTarget.style.transform='scale(1)'}>
-            Book a demo <ArrowRight size={20} />
-        </button>
+        {/* Two CTAs: Contact Sales → /contact (which has the Calendly popup + inquiry form)
+                      View Pricing → /pricing */}
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '40px' }}>
+          <a href="/#/contact" style={{
+              background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)',
+              color: '#000', border: 'none', padding: '16px 32px',
+              borderRadius: '30px', fontSize: '18px', fontWeight: '700',
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px',
+              boxShadow: '0 10px 30px rgba(92, 225, 230, 0.3)',
+              textDecoration: 'none', transition: 'transform 0.2s',
+          }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            Contact Sales <ArrowRight size={20} />
+          </a>
+          <a href="/#/pricing" style={{
+              background: 'rgba(255,255,255,0.07)',
+              color: '#fff', border: '1px solid rgba(255,255,255,0.15)', padding: '16px 32px',
+              borderRadius: '30px', fontSize: '18px', fontWeight: '600',
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px',
+              textDecoration: 'none', transition: 'background 0.2s',
+          }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+          >
+            View Pricing
+          </a>
+        </div>
 
         {/* Abstract UI representation */}
         <div style={{ marginTop: '80px', display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>

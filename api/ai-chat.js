@@ -1,0 +1,725 @@
+// api/ai-chat.js  –  Vercel Serverless Function
+// Replaces the Vite dev-server middleware that used to live in vite.config.js
+
+import { GoogleGenAI } from '@google/genai'
+import { retrieveClosestExamples, getExamplesPromptBlock } from '../ai/semanticRetrieval.js'
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const ALLOWED_MODELS = new Set([
+  'gemma-4-26b-a4b-it',
+  'gemma-4-31b-it'
+])
+
+const ALLOWED_MODES = new Set(['design', 'explain', 'suggest'])
+
+// ---------------------------------------------------------------------------
+// Pure helpers (no I/O)
+// ---------------------------------------------------------------------------
+
+function parseBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false
+  }
+  return fallback
+}
+
+function getAlternateModel(model) {
+  return model === 'gemma-4-26b-a4b-it' ? 'gemma-4-31b-it' : 'gemma-4-26b-a4b-it'
+}
+
+function isRateLimitError(error) {
+  const status = Number(error?.status || error?.statusCode || 0)
+  const code = String(error?.code || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+
+  return (
+    status === 429 ||
+    code.includes('resource_exhausted') ||
+    code.includes('rate') ||
+    message.includes('rate limit') ||
+    message.includes('resource_exhausted') ||
+    message.includes('quota')
+  )
+}
+
+function getModeInstruction(mode, circuitNetlist) {
+  const netlistBlock = String(circuitNetlist || '').trim()
+  const fallbackNetlist = '* Simple Circuit Simulation\n.OP\n.TRAN 1m 100m\n.END'
+  const referenceNetlist = netlistBlock || fallbackNetlist
+
+  if (!mode) {
+    return 'You are an AI Electrical Engineer and is tasked to help user understand their electronic circuits and build on top of it. You have three main modes: Design, explain and suggest which you will suggest the user to choose one of them if the conversation goes deep into circuits.'
+  }
+
+  if (mode === 'design') {
+    return [
+      'You are an expert circuit designer.',
+      'Return ONLY a SPICE netlist as plain text. No markdown fences. No explanations.',
+      'The netlist must follow the same structure/order as this reference and preserve this style:',
+      referenceNetlist,
+      'Required structure:',
+      '1) First line title, typically "* Simple Circuit Simulation".',
+      '2) Optional .MODEL/.SUBCKT section if needed.',
+      '3) Component lines.',
+      '4) .OP line.',
+      '5) .TRAN line.',
+      '6) Optional .PRINT TRAN line.',
+      '7) .END as final line.'
+    ].join('\n\n')
+  }
+
+  if (mode === 'suggest') {
+    return [
+      'You are a circuit optimization assistant.',
+      'Use the provided current netlist to suggest concrete improvements based on the user question.',
+      'Prioritize practical fixes: stability, component values, topology, and simulation directives.',
+      'Current circuit netlist:',
+      referenceNetlist
+    ].join('\n\n')
+  }
+
+  return [
+    'You are a circuit explanation assistant.',
+    'Read and interpret the user current circuit netlist, then answer the user question clearly.',
+    'Reference the actual circuit behavior and nodes/components in your answer.',
+    'Current circuit netlist:',
+    referenceNetlist
+  ].join('\n\n')
+}
+
+function sanitizeMessageHistory(rawHistory, fallbackUserMessage) {
+  const baseHistory = Array.isArray(rawHistory) ? rawHistory : []
+  const cleaned = baseHistory
+    .map((entry) => ({
+      role: String(entry?.role || '').toLowerCase(),
+      content: String(entry?.content || '').trim()
+    }))
+    .filter((entry) => entry.content && ['system', 'user', 'assistant'].includes(entry.role))
+
+  if (!cleaned.some((entry) => entry.role === 'system')) {
+    cleaned.unshift({
+      role: 'system',
+      content: 'You are a circuit designer. Output only custom netlist code.'
+    })
+  }
+
+  if (!cleaned.some((entry) => entry.role === 'user') && fallbackUserMessage) {
+    cleaned.push({ role: 'user', content: fallbackUserMessage })
+  }
+
+  return cleaned
+}
+
+function buildPromptFromHistory(messageHistory, extraSections = []) {
+  const historyBlock = JSON.stringify(messageHistory, null, 2)
+  const sections = [
+    'Use this conversation memory array as context:',
+    historyBlock,
+    ...extraSections.filter(Boolean)
+  ]
+  return sections.join('\n\n')
+}
+
+function tryParseValidationJson(rawText) {
+  const text = String(rawText || '').trim()
+  if (!text) return null
+
+  const tryParse = (value) => {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return null
+    }
+  }
+
+  const direct = tryParse(text)
+  if (direct) return direct
+
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  if (fenceMatch?.[1]) {
+    const fenced = tryParse(fenceMatch[1].trim())
+    if (fenced) return fenced
+  }
+
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    const objectSlice = text.slice(start, end + 1)
+    const sliced = tryParse(objectSlice)
+    if (sliced) return sliced
+  }
+
+  return null
+}
+
+function extractThinkingText(response) {
+  const parts = response?.candidates?.[0]?.content?.parts
+  if (!Array.isArray(parts)) return ''
+
+  return parts
+    .filter((part) => part?.thought === true && typeof part?.text === 'string' && part.text.trim())
+    .map((part) => part.text.trim())
+    .join('\n\n')
+    .trim()
+}
+
+function extractChunkTextParts(responseChunk) {
+  const parts = responseChunk?.candidates?.[0]?.content?.parts
+  if (!Array.isArray(parts) || parts.length === 0) {
+    return {
+      thinkingText: '',
+      answerText: String(responseChunk?.text || '')
+    }
+  }
+
+  let thinkingText = ''
+  let answerText = ''
+
+  parts.forEach((part) => {
+    if (typeof part?.text !== 'string' || !part.text) return
+    if (part?.thought === true) {
+      thinkingText += part.text
+      return
+    }
+    answerText += part.text
+  })
+
+  return { thinkingText, answerText }
+}
+
+function accumulateChunkDelta(nextText, previousText) {
+  const normalizedNext = String(nextText || '')
+  const normalizedPrevious = String(previousText || '')
+
+  if (!normalizedNext) {
+    return { delta: '', nextText: normalizedPrevious }
+  }
+
+  if (normalizedNext.startsWith(normalizedPrevious)) {
+    return {
+      delta: normalizedNext.slice(normalizedPrevious.length),
+      nextText: normalizedNext
+    }
+  }
+
+  // Some stream payloads are pure deltas instead of cumulative text.
+  return {
+    delta: normalizedNext,
+    nextText: `${normalizedPrevious}${normalizedNext}`
+  }
+}
+
+function buildGenerationConfig(includeThinking) {
+  const baseConfig = {
+    tools: [{ googleSearch: {} }]
+  }
+
+  if (!includeThinking) {
+    return baseConfig
+  }
+
+  return {
+    ...baseConfig,
+    thinkingConfig: {
+      includeThoughts: true,
+      thinkingLevel: 'high'
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AI call helpers
+// ---------------------------------------------------------------------------
+
+async function generateWithFallback({ ai, primaryModel, fallbackModel, requestBody }) {
+  let response
+  let usedModel = primaryModel
+
+  try {
+    response = await ai.models.generateContent({
+      model: primaryModel,
+      ...requestBody
+    })
+  } catch (primaryError) {
+    if (!isRateLimitError(primaryError)) {
+      throw primaryError
+    }
+
+    response = await ai.models.generateContent({
+      model: fallbackModel,
+      ...requestBody
+    })
+    usedModel = fallbackModel
+  }
+
+  return { response, usedModel }
+}
+
+async function generateStreamWithFallback({ ai, primaryModel, fallbackModel, requestBody }) {
+  let stream
+  let usedModel = primaryModel
+
+  try {
+    stream = await ai.models.generateContentStream({
+      model: primaryModel,
+      ...requestBody
+    })
+  } catch (primaryError) {
+    if (!isRateLimitError(primaryError)) {
+      throw primaryError
+    }
+
+    stream = await ai.models.generateContentStream({
+      model: fallbackModel,
+      ...requestBody
+    })
+    usedModel = fallbackModel
+  }
+
+  return { stream, usedModel }
+}
+
+// ---------------------------------------------------------------------------
+// SSE writer
+// ---------------------------------------------------------------------------
+
+function writeSseEvent(res, eventName, payload) {
+  res.write(`event: ${eventName}\n`)
+  res.write(`data: ${JSON.stringify(payload)}\n\n`)
+}
+
+// ---------------------------------------------------------------------------
+// Vercel Serverless Function handler
+// ---------------------------------------------------------------------------
+
+export default async function handler(req, res) {
+  // CORS headers – allow the frontend origin (update if you use a custom domain)
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end()
+    return
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    res.status(500).json({ error: 'Missing GEMINI_API_KEY environment variable.' })
+    return
+  }
+
+  try {
+    // Vercel automatically parses JSON bodies – body is already an object.
+    const body = req.body || {}
+
+    const message = String(body.message || '').trim()
+    const model = String(body.model || 'gemma-4-26b-a4b-it')
+    const rawMode = body.mode
+    const mode = typeof rawMode === 'string' ? rawMode.toLowerCase() : ''
+    const circuitNetlist = String(body.circuitNetlist || '')
+    const action = String(body.action || 'chat').toLowerCase()
+    const iterationPhase = String(body.iterationPhase || 'initial').toLowerCase()
+    const simulationOutput = String(body.simulationOutput || '')
+    const previousNetlist = String(body.previousNetlist || '')
+    const intentSummary = String(body.intentSummary || message)
+    const messageHistory = sanitizeMessageHistory(body.messageHistory, message)
+    const includeThinking = parseBoolean(body.includeThinking, true)
+    const streamRequested = parseBoolean(body.stream, false)
+
+    if (!message) {
+      res.status(400).json({ error: 'Message is required.' })
+      return
+    }
+
+    if (!ALLOWED_MODELS.has(model)) {
+      res.status(400).json({ error: 'Unsupported model selection.' })
+      return
+    }
+
+    const normalizedMode = ALLOWED_MODES.has(mode) ? mode : ''
+    if (mode && !ALLOWED_MODES.has(mode)) {
+      res.status(400).json({ error: 'Unsupported assistant mode.' })
+      return
+    }
+
+    const modeInstruction = getModeInstruction(normalizedMode, circuitNetlist)
+    const ai = new GoogleGenAI({ apiKey })
+    const primaryModel = model
+    const fallbackModel = getAlternateModel(primaryModel)
+
+    // -----------------------------------------------------------------------
+    // action: design-build
+    // -----------------------------------------------------------------------
+    if (action === 'design-build') {
+      if (normalizedMode !== 'design') {
+        res.status(400).json({ error: 'Design build action is only allowed in Design mode.' })
+        return
+      }
+
+      let designPrompt
+      let retrieval = null
+      let semanticProjection = null
+
+      if (iterationPhase === 'retry') {
+        designPrompt = buildPromptFromHistory(messageHistory, [
+          'Iteration mode: do not use retrieval examples. Repair only based on latest output and latest error.',
+          'Return only a valid custom SPICE netlist in plain text (no markdown fences).'
+        ])
+      } else {
+        retrieval = retrieveClosestExamples(message, 2)
+        const examplesBlock = getExamplesPromptBlock(retrieval.matches)
+
+        semanticProjection = {
+          queryAnchors: retrieval.queryEmbedding.anchorProjection,
+          nearestExamples: retrieval.matches.map((match) => ({
+            id: match.id,
+            title: match.title,
+            distance: Number(match.distance.toFixed(6)),
+            anchors: match.anchorProjection
+          }))
+        }
+
+        designPrompt = buildPromptFromHistory(messageHistory, [
+          modeInstruction,
+          'Semantic retrieval conceptual space (query vs examples):',
+          JSON.stringify(semanticProjection, null, 2),
+          'Use the nearest examples below as references. Keep their top comments.',
+          examplesBlock,
+          'Return only a valid custom SPICE netlist in plain text (no markdown fences).'
+        ])
+      }
+
+      const requestBody = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: designPrompt }]
+        }],
+        config: buildGenerationConfig(includeThinking)
+      }
+
+      console.log('[AI DEBUG] Gemma input payload:', {
+        action,
+        iterationPhase,
+        model: primaryModel,
+        messageHistory,
+        semanticProjection,
+        nearestExampleTitles: retrieval ? retrieval.matches.map((m) => m.title) : []
+      })
+
+      if (streamRequested) {
+        res.status(200)
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-cache, no-transform')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders?.()
+
+        try {
+          const { stream, usedModel } = await generateStreamWithFallback({
+            ai, primaryModel, fallbackModel, requestBody
+          })
+
+          let fullThinking = ''
+          let fullText = ''
+
+          writeSseEvent(res, 'meta', { usedModel })
+
+          for await (const chunk of stream) {
+            const { thinkingText, answerText } = extractChunkTextParts(chunk)
+            const thinkingAccumulation = accumulateChunkDelta(thinkingText, fullThinking)
+            const answerAccumulation = accumulateChunkDelta(answerText, fullText)
+
+            fullThinking = thinkingAccumulation.nextText
+            fullText = answerAccumulation.nextText
+
+            if (!thinkingAccumulation.delta && !answerAccumulation.delta) continue
+
+            writeSseEvent(res, 'chunk', {
+              thinkingDelta: thinkingAccumulation.delta,
+              textDelta: answerAccumulation.delta
+            })
+          }
+
+          const generatedNetlist = String(fullText || '').trim()
+
+          writeSseEvent(res, 'complete', {
+            text: generatedNetlist,
+            generatedNetlist,
+            thinking: fullThinking,
+            usedModel,
+            retrievedExamples: retrieval ? retrieval.matches.map((m) => ({
+              id: m.id, title: m.title, distance: m.distance
+            })) : [],
+            semanticProjection
+          })
+        } catch (streamError) {
+          writeSseEvent(res, 'error', {
+            error: streamError?.message || 'Streaming design build failed.'
+          })
+        }
+
+        res.end()
+        return
+      }
+
+      const { response, usedModel } = await generateWithFallback({
+        ai, primaryModel, fallbackModel, requestBody
+      })
+
+      const generatedNetlist = String(response.text || '').trim()
+      const thinking = extractThinkingText(response)
+      console.log('[AI DEBUG] Gemma output netlist:', generatedNetlist)
+
+      res.status(200).json({
+        text: generatedNetlist,
+        generatedNetlist,
+        thinking,
+        usedModel,
+        retrievedExamples: retrieval ? retrieval.matches.map((m) => ({
+          id: m.id, title: m.title, distance: m.distance
+        })) : [],
+        semanticProjection
+      })
+      return
+    }
+
+    // -----------------------------------------------------------------------
+    // action: validate-intent
+    // -----------------------------------------------------------------------
+    if (action === 'validate-intent') {
+      const validationPrompt = buildPromptFromHistory(messageHistory, [
+        'You are validating whether a generated SPICE circuit matches intended behavior.',
+        `Intended circuit request: ${intentSummary}`,
+        'Generated netlist:',
+        previousNetlist || circuitNetlist,
+        'ngspice simulation output:',
+        simulationOutput,
+        'Return strict JSON only with keys: intended(boolean), confidence(number 0-1), reason(string), suggestedFix(string).'
+      ])
+
+      const requestBody = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: validationPrompt }]
+        }],
+        config: buildGenerationConfig(includeThinking)
+      }
+
+      console.log('[AI DEBUG] Validation input payload:', {
+        action, model: primaryModel, messageHistory, intentSummary
+      })
+
+      if (streamRequested) {
+        res.status(200)
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-cache, no-transform')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders?.()
+
+        try {
+          const { stream, usedModel } = await generateStreamWithFallback({
+            ai, primaryModel, fallbackModel, requestBody
+          })
+
+          let fullThinking = ''
+          let fullText = ''
+
+          writeSseEvent(res, 'meta', { usedModel })
+
+          for await (const chunk of stream) {
+            const { thinkingText, answerText } = extractChunkTextParts(chunk)
+            const thinkingAccumulation = accumulateChunkDelta(thinkingText, fullThinking)
+            const answerAccumulation = accumulateChunkDelta(answerText, fullText)
+
+            fullThinking = thinkingAccumulation.nextText
+            fullText = answerAccumulation.nextText
+
+            if (!thinkingAccumulation.delta && !answerAccumulation.delta) continue
+
+            writeSseEvent(res, 'chunk', {
+              thinkingDelta: thinkingAccumulation.delta,
+              textDelta: answerAccumulation.delta
+            })
+          }
+
+          const rawText = String(fullText || '').trim()
+          const parsed = tryParseValidationJson(rawText)
+
+          const validationPayload = parsed || {
+            intended: false,
+            confidence: 0.3,
+            reason: rawText || 'Validation response was not JSON.',
+            suggestedFix: 'Review node connections and component values, then regenerate once.'
+          }
+
+          const normalizedValidation = {
+            intended: Boolean(validationPayload.intended),
+            confidence: Number.isFinite(Number(validationPayload.confidence))
+              ? Number(validationPayload.confidence)
+              : 0.3,
+            reason: String(validationPayload.reason || ''),
+            suggestedFix: String(validationPayload.suggestedFix || '')
+          }
+
+          writeSseEvent(res, 'complete', {
+            text: rawText,
+            thinking: fullThinking,
+            usedModel,
+            validation: normalizedValidation
+          })
+        } catch (streamError) {
+          writeSseEvent(res, 'error', {
+            error: streamError?.message || 'Streaming validation failed.'
+          })
+        }
+
+        res.end()
+        return
+      }
+
+      const { response, usedModel } = await generateWithFallback({
+        ai, primaryModel, fallbackModel, requestBody
+      })
+
+      const rawText = String(response.text || '').trim()
+      const thinking = extractThinkingText(response)
+      console.log('[AI DEBUG] Validation model output:', rawText)
+
+      const parsed = tryParseValidationJson(rawText)
+
+      const validationPayload = parsed || {
+        intended: false,
+        confidence: 0.3,
+        reason: rawText || 'Validation response was not JSON.',
+        suggestedFix: 'Review node connections and component values, then regenerate once.'
+      }
+
+      const normalizedValidation = {
+        intended: Boolean(validationPayload.intended),
+        confidence: Number.isFinite(Number(validationPayload.confidence))
+          ? Number(validationPayload.confidence)
+          : 0.3,
+        reason: String(validationPayload.reason || ''),
+        suggestedFix: String(validationPayload.suggestedFix || '')
+      }
+
+      res.status(200).json({
+        text: rawText,
+        thinking,
+        usedModel,
+        validation: normalizedValidation
+      })
+      return
+    }
+
+    // -----------------------------------------------------------------------
+    // action: chat (streaming)
+    // -----------------------------------------------------------------------
+    if (action === 'chat' && streamRequested) {
+      const finalPrompt = buildPromptFromHistory(messageHistory, [
+        modeInstruction,
+        `User request:\n${message}`
+      ])
+
+      const requestBody = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: finalPrompt }]
+        }],
+        config: buildGenerationConfig(includeThinking)
+      }
+
+      console.log('[AI DEBUG] Chat stream input payload:', {
+        action, streamRequested, model: primaryModel, messageHistory
+      })
+
+      res.status(200)
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+      res.setHeader('Cache-Control', 'no-cache, no-transform')
+      res.setHeader('Connection', 'keep-alive')
+      res.flushHeaders?.()
+
+      try {
+        const { stream, usedModel } = await generateStreamWithFallback({
+          ai, primaryModel, fallbackModel, requestBody
+        })
+
+        let fullThinking = ''
+        let fullText = ''
+
+        writeSseEvent(res, 'meta', { usedModel })
+
+        for await (const chunk of stream) {
+          const { thinkingText, answerText } = extractChunkTextParts(chunk)
+          const thinkingAccumulation = accumulateChunkDelta(thinkingText, fullThinking)
+          const answerAccumulation = accumulateChunkDelta(answerText, fullText)
+
+          fullThinking = thinkingAccumulation.nextText
+          fullText = answerAccumulation.nextText
+
+          if (!thinkingAccumulation.delta && !answerAccumulation.delta) continue
+
+          writeSseEvent(res, 'chunk', {
+            thinkingDelta: thinkingAccumulation.delta,
+            textDelta: answerAccumulation.delta
+          })
+        }
+
+        writeSseEvent(res, 'complete', {
+          text: fullText,
+          thinking: fullThinking,
+          usedModel
+        })
+      } catch (streamError) {
+        writeSseEvent(res, 'error', {
+          error: streamError?.message || 'Streaming chat failed.'
+        })
+      }
+
+      res.end()
+      return
+    }
+
+    // -----------------------------------------------------------------------
+    // action: chat (non-streaming)
+    // -----------------------------------------------------------------------
+    const finalPrompt = buildPromptFromHistory(messageHistory, [
+      modeInstruction,
+      `User request:\n${message}`
+    ])
+
+    const requestBody = {
+      contents: [{
+        role: 'user',
+        parts: [{ text: finalPrompt }]
+      }],
+      config: buildGenerationConfig(includeThinking)
+    }
+
+    console.log('[AI DEBUG] Chat input payload:', {
+      action, model: primaryModel, messageHistory
+    })
+
+    const { response, usedModel } = await generateWithFallback({
+      ai, primaryModel, fallbackModel, requestBody
+    })
+
+    const thinking = extractThinkingText(response)
+    console.log('[AI DEBUG] Chat output:', String(response.text || ''))
+
+    res.status(200).json({ text: response.text || '', thinking, usedModel })
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'AI request failed.' })
+  }
+}

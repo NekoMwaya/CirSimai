@@ -36,3 +36,61 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 100, 100, 0.8);
 }
+
+.ai-markdown {
+  overflow-wrap: anywhere;
+}
+
+.ai-markdown > :first-child {
+  margin-top: 0;
+}
+
+.ai-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.ai-markdown p,
+.ai-markdown ul,
+.ai-markdown ol,
+.ai-markdown table,
+.ai-markdown pre,
+.ai-markdown blockquote {
+  margin: 0.6rem 0;
+}
+
+.ai-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ai-markdown th,
+.ai-markdown td {
+  border: 1px solid rgba(120, 120, 120, 0.4);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ai-markdown th {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ai-markdown code {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.9em;
+}
+
+.ai-markdown pre {
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  padding: 10px;
+  overflow-x: auto;
+}
+
+.ai-markdown pre code {
+  background: transparent;
+  padding: 0;
+}

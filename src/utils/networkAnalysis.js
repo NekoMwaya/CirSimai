@@ -1,6 +1,28 @@
 import { getPins } from './math';
+import { layoutCellFromCanvas, normalizeRotationDegrees } from './aiLayoutGrid';
 
 const coordId = (x, y) => `${Math.round(x)},${Math.round(y)}`;
+
+export const buildLayoutAnnotatedNetlist = (components, netlistText) => {
+    const source = String(netlistText || '');
+    if (!source.trim()) return source;
+
+    const layoutLines = components
+        .filter(c => c?.type !== 'ground' && c?.label)
+        .map(c => {
+            const { col, row } = layoutCellFromCanvas(c.x, c.y);
+            const rotation = normalizeRotationDegrees(c.rotation);
+            return `* [LAYOUT] ${String(c.label).trim()} C=${col} R=${row} ROT=${rotation}`;
+        });
+
+    if (layoutLines.length === 0) return source;
+
+    const lines = source.split('\n');
+    if (lines[0].trim().startsWith('*')) {
+        return [lines[0], ...layoutLines, ...lines.slice(1)].join('\n');
+    }
+    return [...layoutLines, ...lines].join('\n');
+};
 
 /**
  * Parse engineering notation (e.g., "1k" -> 1000, "10u" -> 0.00001)
@@ -24,6 +46,22 @@ const parseEngValue = (str) => {
         return num;
     }
     return parseFloat(str) || 0;
+};
+
+const isIdealModel = (value, prefix) => {
+    const normalized = String(value || '').trim().toUpperCase();
+    return normalized === prefix || normalized.startsWith(`${prefix}_`);
+};
+
+const resolveIdealModelName = (value, prefix, label) => {
+    const raw = String(value || '').trim();
+    if (!raw) return `${prefix}_${label}`;
+
+    if (raw.toUpperCase() === prefix) {
+        return `${prefix}_${label}`;
+    }
+
+    return raw;
 };
 
 const isPointOnWire = (px, py, x1, y1, x2, y2, tolerance = 5) => {
@@ -67,6 +105,7 @@ const isPointOnWire = (px, py, x1, y1, x2, y2, tolerance = 5) => {
  */
 export const generateNetlist = (components, wires, options = {}) => {
     const { tranEndTime } = options;
+    const hasStrictConnectivity = wires.some(w => w?.strictConnectivity === true);
     
     // 1. Connectivity Graph - using Sets to avoid duplicate edges
     const adj = new Map(); 
@@ -104,6 +143,14 @@ export const generateNetlist = (components, wires, options = {}) => {
         pointsOfInterest.push({ x: w.points[2], y: w.points[3], id: id2 });
     });
 
+    // Strict points belong to Simple/LLM-generated wires and should not be proximity-merged.
+    const strictPointIds = new Set();
+    wires.forEach(w => {
+        if (w?.strictConnectivity !== true) return;
+        strictPointIds.add(coordId(w.points[0], w.points[1]));
+        strictPointIds.add(coordId(w.points[2], w.points[3]));
+    });
+
     const tolerance = 5;
 
     // 1c. Wire Segments Connectivity
@@ -111,6 +158,12 @@ export const generateNetlist = (components, wires, options = {}) => {
     wires.forEach(w => {
         const x1 = w.points[0], y1 = w.points[1];
         const x2 = w.points[2], y2 = w.points[3];
+
+        // Strict mode wires are explicit endpoint connections only.
+        if (w?.strictConnectivity === true) {
+            connect(coordId(x1, y1), coordId(x2, y2));
+            return;
+        }
 
         // Find all points that lie on this wire
         const onWire = pointsOfInterest.filter(p => 
@@ -137,6 +190,11 @@ export const generateNetlist = (components, wires, options = {}) => {
         for (let j = i + 1; j < pointsOfInterest.length; j++) {
             const p1 = pointsOfInterest[i];
             const p2 = pointsOfInterest[j];
+
+            // Never proximity-merge strict Simple/LLM points.
+            if (strictPointIds.has(p1.id) || strictPointIds.has(p2.id)) {
+                continue;
+            }
             
             // Optimization: Only check if they are close
             if (Math.abs(p1.x - p2.x) <= tolerance && Math.abs(p1.y - p2.y) <= tolerance) {
@@ -167,12 +225,14 @@ export const generateNetlist = (components, wires, options = {}) => {
                  
                  // Ensure ground is connected to any nearby points
                  // This handles cases where ground isn't directly wired but is close enough
-                 pointsOfInterest.forEach(pt => {
-                     if (Math.abs(pt.x - gndPin.x) <= tolerance && 
-                         Math.abs(pt.y - gndPin.y) <= tolerance) {
-                         connect(pt.id, gndKey);
-                     }
-                 });
+                 if (!hasStrictConnectivity) {
+                     pointsOfInterest.forEach(pt => {
+                         if (Math.abs(pt.x - gndPin.x) <= tolerance && 
+                             Math.abs(pt.y - gndPin.y) <= tolerance) {
+                             connect(pt.id, gndKey);
+                         }
+                     });
+                 }
                  
                  // If that pin is part of the graph and has connections
                  if (adj.has(gndKey) && adj.get(gndKey).size > 0) {
@@ -248,6 +308,7 @@ export const generateNetlist = (components, wires, options = {}) => {
     let netlist = "* Simple Circuit Simulation\n";
     const componentMap = {}; // Maps visual ID (string) -> { name: "R1", probe: "@r1[i]" }
     const probes = []; // List of things to print: "v(1)", "@r1[i]"
+    const emittedModels = new Set();
     
     // Track transistor and diode types to add model definitions
     const hasNpnBjt = components.some(c => c.type === 'bjt_npn');
@@ -294,16 +355,21 @@ export const generateNetlist = (components, wires, options = {}) => {
         netlist += ".MODEL 2N3906 PNP (IS=1.41f XTI=3 EG=1.11 VAF=18.7 BF=180.7 NE=1.5 ISE=0 IKF=80m XTB=1.5 BR=4.977 NC=2 ISC=0 IKR=0 RC=2.5 CJC=9.728p MJC=.5776 VJC=.75 FC=.5 CJE=8.063p MJE=.3677 VJE=.75 TR=33.42n TF=179.3p ITF=.4 VTF=4 XTF=6 RB=10)\n";
     }
     
-    // Generate per-component IDEAL BJT models with custom beta
-    components.filter(c => c.type === 'bjt_npn' && c.value === 'IDEAL_NPN').forEach(c => {
+    // Generate IDEAL BJT models with custom beta.
+    // Supports both generic values (IDEAL_NPN) and explicit names (IDEAL_NPN_Q1).
+    components.filter(c => c.type === 'bjt_npn' && isIdealModel(c.value, 'IDEAL_NPN')).forEach(c => {
         const beta = c.beta ?? 100;
-        const modelName = `IDEAL_NPN_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_NPN', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} NPN (IS=1e-14 BF=${beta} VAF=1000 VJE=0.7)\n`;
+        emittedModels.add(modelName);
     });
-    components.filter(c => c.type === 'bjt_pnp' && c.value === 'IDEAL_PNP').forEach(c => {
+    components.filter(c => c.type === 'bjt_pnp' && isIdealModel(c.value, 'IDEAL_PNP')).forEach(c => {
         const beta = c.beta ?? 100;
-        const modelName = `IDEAL_PNP_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_PNP', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} PNP (IS=1e-14 BF=${beta} VAF=1000 VJE=0.7)\n`;
+        emittedModels.add(modelName);
     });
     
     // Add MOSFET model definitions
@@ -318,8 +384,8 @@ export const generateNetlist = (components, wires, options = {}) => {
         netlist += ".MODEL VP2106 PMOS (VTO=-2.5 KP=15m LAMBDA=0.025)\n";
     }
     
-    // Generate per-component IDEAL MOSFET models with custom Vth and KP derived from Id(on)@Vgs(on)
-    components.filter(c => c.type === 'nmos' && c.value === 'IDEAL_NMOS').forEach(c => {
+    // Generate IDEAL MOSFET models with custom Vth and KP derived from Id(on)@Vgs(on).
+    components.filter(c => c.type === 'nmos' && isIdealModel(c.value, 'IDEAL_NMOS')).forEach(c => {
         const vth = c.vth ?? 1;
         const id_on = (c.id_on ?? 2) / 1000; // mA to A
         const vgs_on = c.vgs_on ?? 10;
@@ -331,10 +397,12 @@ export const generateNetlist = (components, wires, options = {}) => {
             kp = (2 * id_on) / Math.pow(vgs_on - vth, 2);
         }
 
-        const modelName = `IDEAL_NMOS_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_NMOS', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} NMOS (VTO=${vth} KP=${kp} LAMBDA=0.01)\n`;
+        emittedModels.add(modelName);
     });
-    components.filter(c => c.type === 'pmos' && c.value === 'IDEAL_PMOS').forEach(c => {
+    components.filter(c => c.type === 'pmos' && isIdealModel(c.value, 'IDEAL_PMOS')).forEach(c => {
         const vth = c.vth ?? -1;
         const id_on = (c.id_on ?? 2) / 1000; // mA to A
         const vgs_on = c.vgs_on ?? -10;
@@ -345,8 +413,10 @@ export const generateNetlist = (components, wires, options = {}) => {
              kp = (2 * id_on) / Math.pow(Math.abs(vgs_on) - Math.abs(vth), 2);
         }
 
-        const modelName = `IDEAL_PMOS_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_PMOS', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} PMOS (VTO=${vth} KP=${kp} LAMBDA=0.01)\n`;
+        emittedModels.add(modelName);
     });
     
     // Add JFET model definitions
@@ -361,20 +431,24 @@ export const generateNetlist = (components, wires, options = {}) => {
         netlist += ".MODEL J175 PJF (VTO=4.0 BETA=0.3m LAMBDA=0.01)\n";
     }
     
-    // Generate per-component IDEAL JFET models with custom Vp
-    components.filter(c => c.type === 'njfet' && c.value === 'IDEAL_NJFET').forEach(c => {
+    // Generate IDEAL JFET models with custom Vp.
+    components.filter(c => c.type === 'njfet' && isIdealModel(c.value, 'IDEAL_NJFET')).forEach(c => {
         const vp = c.vp ?? -2;
         const idss = (c.idss ?? 10) / 1000; // Convert mA to A
         const beta = idss / (Math.pow(vp, 2));
-        const modelName = `IDEAL_NJFET_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_NJFET', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} NJF (VTO=${vp} BETA=${beta} LAMBDA=0.01)\n`;
+        emittedModels.add(modelName);
     });
-    components.filter(c => c.type === 'pjfet' && c.value === 'IDEAL_PJFET').forEach(c => {
+    components.filter(c => c.type === 'pjfet' && isIdealModel(c.value, 'IDEAL_PJFET')).forEach(c => {
         const vp = c.vp ?? 2;
         const idss = (c.idss ?? 5) / 1000; // Convert mA to A
         const beta = idss / (Math.pow(vp, 2));
-        const modelName = `IDEAL_PJFET_${c.label}`;
+        const modelName = resolveIdealModelName(c.value, 'IDEAL_PJFET', c.label);
+        if (emittedModels.has(modelName)) return;
         netlist += `.MODEL ${modelName} PJF (VTO=${vp} BETA=${beta} LAMBDA=0.01)\n`;
+        emittedModels.add(modelName);
     });
     
     // Check for op-amps
@@ -383,8 +457,8 @@ export const generateNetlist = (components, wires, options = {}) => {
     // Add op-amp subcircuit definitions
     // Op-amps in ngspice are modeled as subcircuits with controlled sources
     if (hasOpamp) {
-        // Generate per-component IDEAL OPAMP models with custom Aol, Zin, Zout
-        components.filter(c => (c.type === 'opamp' || c.type === 'opamp5') && c.value === 'IDEAL_OPAMP').forEach(c => {
+        // Generate IDEAL OPAMP models with custom Aol, Zin, Zout.
+        components.filter(c => (c.type === 'opamp' || c.type === 'opamp5') && isIdealModel(c.value, 'IDEAL_OPAMP')).forEach(c => {
             const aol = c.aol ?? 100000;
             // For Zin and Zout, handle potential suffixes or default values
             // Default Zin = 10Meg, Zout = 0 (Ideal)
@@ -395,7 +469,8 @@ export const generateNetlist = (components, wires, options = {}) => {
             // If Zout is effectively 0, we can use the simple model or just use very small resistance
             // Spice resistors can't be exactly 0 usually.
             
-            const modelName = `IDEAL_OPAMP_${c.label}`;
+            const modelName = resolveIdealModelName(c.value, 'IDEAL_OPAMP', c.label);
+            if (emittedModels.has(modelName)) return;
             netlist += `* Custom Ideal Op-Amp for ${c.label}\n`;
             netlist += `.SUBCKT ${modelName} inp inm out\n`;
             netlist += `Rin inp inm ${zinProp}\n`;
@@ -410,6 +485,7 @@ export const generateNetlist = (components, wires, options = {}) => {
                  netlist += `Rout int_out out ${zoutProp}\n`;
             }
             netlist += `.ENDS ${modelName}\n`;
+            emittedModels.add(modelName);
         });
         
         // LM741: Classic general-purpose op-amp (simplified model)
@@ -531,11 +607,11 @@ export const generateNetlist = (components, wires, options = {}) => {
             const nEmitter = nodeMap.get(coordId(pins[2].x, pins[2].y)) ?? 0;
             
             let modelName = c.value || (c.type === 'bjt_npn' ? '2N2222' : '2N2907');
-            // Use per-component model name for IDEAL models (custom beta support)
-            if (modelName === 'IDEAL_NPN') {
-                modelName = `IDEAL_NPN_${c.label}`;
-            } else if (modelName === 'IDEAL_PNP') {
-                modelName = `IDEAL_PNP_${c.label}`;
+            // Use per-component model name for generic IDEAL values and preserve explicit names.
+            if (isIdealModel(modelName, 'IDEAL_NPN')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_NPN', c.label);
+            } else if (isIdealModel(modelName, 'IDEAL_PNP')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_PNP', c.label);
             }
             
             netlist += `${spiceName} ${nCollector} ${nBase} ${nEmitter} ${modelName}\n`;
@@ -563,11 +639,11 @@ export const generateNetlist = (components, wires, options = {}) => {
             
             const defaultModel = c.type === 'nmos' ? 'IDEAL_NMOS' : 'IDEAL_PMOS';
             let modelName = c.value || defaultModel;
-            // Use per-component model name for IDEAL models (custom Vth support)
-            if (modelName === 'IDEAL_NMOS') {
-                modelName = `IDEAL_NMOS_${c.label}`;
-            } else if (modelName === 'IDEAL_PMOS') {
-                modelName = `IDEAL_PMOS_${c.label}`;
+            // Use per-component model name for generic IDEAL values and preserve explicit names.
+            if (isIdealModel(modelName, 'IDEAL_NMOS')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_NMOS', c.label);
+            } else if (isIdealModel(modelName, 'IDEAL_PMOS')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_PMOS', c.label);
             }
             
             netlist += `${spiceName} ${nDrain} ${nGate} ${nSource} ${nBody} ${modelName}\n`;
@@ -592,11 +668,11 @@ export const generateNetlist = (components, wires, options = {}) => {
             
             const defaultModel = c.type === 'njfet' ? 'IDEAL_NJFET' : 'IDEAL_PJFET';
             let modelName = c.value || defaultModel;
-            // Use per-component model name for IDEAL models (custom Vp support)
-            if (modelName === 'IDEAL_NJFET') {
-                modelName = `IDEAL_NJFET_${c.label}`;
-            } else if (modelName === 'IDEAL_PJFET') {
-                modelName = `IDEAL_PJFET_${c.label}`;
+            // Use per-component model name for generic IDEAL values and preserve explicit names.
+            if (isIdealModel(modelName, 'IDEAL_NJFET')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_NJFET', c.label);
+            } else if (isIdealModel(modelName, 'IDEAL_PJFET')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_PJFET', c.label);
             }
             
             netlist += `${spiceName} ${nDrain} ${nGate} ${nSource} ${modelName}\n`;
@@ -620,9 +696,9 @@ export const generateNetlist = (components, wires, options = {}) => {
             const nOut = nodeMap.get(coordId(pins[2].x, pins[2].y)) ?? 0;
             
             let modelName = c.value || 'IDEAL_OPAMP';
-            // Use per-component model name for IDEAL models
-            if (modelName === 'IDEAL_OPAMP') {
-                modelName = `IDEAL_OPAMP_${c.label}`;
+            // Use per-component model name for generic IDEAL values and preserve explicit names.
+            if (isIdealModel(modelName, 'IDEAL_OPAMP')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_OPAMP', c.label);
             }
             
             // Use X prefix for subcircuit instantiation
@@ -649,9 +725,9 @@ export const generateNetlist = (components, wires, options = {}) => {
             
             let modelName = c.value || 'IDEAL_OPAMP';
             
-            // Use the same model as 3-pin but ignore power pins for ideal model
-            if (modelName === 'IDEAL_OPAMP') {
-                modelName = `IDEAL_OPAMP_${c.label}`;
+            // Use the same model as 3-pin but ignore power pins for ideal model.
+            if (isIdealModel(modelName, 'IDEAL_OPAMP')) {
+                modelName = resolveIdealModelName(modelName, 'IDEAL_OPAMP', c.label);
             }
             
             netlist += `X${spiceName} ${nInPlus} ${nInMinus} ${nOut} ${modelName}\n`;
