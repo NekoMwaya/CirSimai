@@ -14,7 +14,7 @@ const ALLOWED_MODELS = new Set([
   'gemma-4-31b-it'
 ])
 
-const ALLOWED_MODES = new Set(['design', 'explain', 'suggest'])
+const ALLOWED_MODES = new Set(['ask', 'agent', 'planning'])
 
 // ---------------------------------------------------------------------------
 // Pure helpers (no I/O)
@@ -50,47 +50,39 @@ function isRateLimitError(error) {
 }
 
 function getModeInstruction(mode, circuitNetlist) {
-  const netlistBlock = String(circuitNetlist || '').trim()
-  const fallbackNetlist = '* Simple Circuit Simulation\n.OP\n.TRAN 1m 100m\n.END'
-  const referenceNetlist = netlistBlock || fallbackNetlist
+  const referenceNetlist = String(circuitNetlist || '').trim() || '* Empty Canvas';
 
-  if (!mode) {
-    return 'You are an AI Electrical Engineer and is tasked to help user understand their electronic circuits and build on top of it. You have three main modes: Design, explain and suggest which you will suggest the user to choose one of them if the conversation goes deep into circuits.'
-  }
-
-  if (mode === 'design') {
+  if (mode === 'agent') {
     return [
-      'You are an expert circuit designer.',
-      'Return ONLY a SPICE netlist as plain text. No markdown fences. No explanations.',
-      'The netlist must follow the same structure/order as this reference and preserve this style:',
-      referenceNetlist,
-      'Required structure:',
-      '1) First line title, typically "* Simple Circuit Simulation".',
-      '2) Optional .MODEL/.SUBCKT section if needed.',
-      '3) Component lines.',
-      '4) .OP line.',
-      '5) .TRAN line.',
-      '6) Optional .PRINT TRAN line.',
-      '7) .END as final line.'
+      'You are an autonomous circuit engineering agent.',
+      'CRITICAL REASONING DIRECTIVE: Be extremely decisive. Once you reach a solution in your internal thoughts, proceed immediately to output. Do not double-check or repeat your reasoning once a valid netlist structure is identified.',
+      'Return ONLY a SPICE netlist as plain text with [LAYOUT] tags. No markdown fences. No explanations.',
+      `Current Canvas:\n${referenceNetlist}`
     ].join('\n\n')
   }
 
-  if (mode === 'suggest') {
+  if (mode === 'planning') {
     return [
-      'You are a circuit optimization assistant.',
-      'Use the provided current netlist to suggest concrete improvements based on the user question.',
-      'Prioritize practical fixes: stability, component values, topology, and simulation directives.',
-      'Current circuit netlist:',
-      referenceNetlist
+      'You are a hardware architecture planner.',
+      'If the user is just greeting you or asking a general theory question, reply normally and conversationally. Do NOT use any XML tags in that case.',
+      'If the user is asking to design, build, or outline a circuit, you MUST wrap your entire step-by-step blueprint inside <PLAN> and </PLAN> tags.',
+      'Example of a plan response:',
+      '<PLAN>',
+      '## Low-Pass RC Filter',
+      '1. Place a 5V DC Source (V1).',
+      '2. Add a 1kΩ Resistor (R1) in series.',
+      '3. Connect a 10µF Capacitor (C1) from the mid-node to ground.',
+      '</PLAN>',
+      'DO NOT write the SPICE netlist inside the plan. Write clear, structured markdown.',
+      `Current Canvas:\n${referenceNetlist}`
     ].join('\n\n')
   }
 
+  // Default to 'ask'
   return [
-    'You are a circuit explanation assistant.',
-    'Read and interpret the user current circuit netlist, then answer the user question clearly.',
-    'Reference the actual circuit behavior and nodes/components in your answer.',
-    'Current circuit netlist:',
-    referenceNetlist
+    'You are an electrical engineering copilot.',
+    'Answer the user\'s questions regarding theory, debugging, or SPICE syntax clearly and concisely.',
+    `Current Canvas:\n${referenceNetlist}`
   ].join('\n\n')
 }
 
@@ -216,13 +208,15 @@ function accumulateChunkDelta(nextText, previousText) {
   }
 }
 
-function buildGenerationConfig(includeThinking) {
+function buildGenerationConfig(includeThinking, model = '') {
   const baseConfig = {
-    maxOutputTokens: 8192,
-    tools: [{ googleSearch: {} }]
+    maxOutputTokens: 16384
   }
 
-  if (!includeThinking) {
+  // Only gemma-4-31b doesn't support thinkingLevel parameter
+  const supportsThinking = !model.includes('gemma')
+
+  if (!includeThinking || !supportsThinking) {
     return baseConfig
   }
 
@@ -230,7 +224,7 @@ function buildGenerationConfig(includeThinking) {
     ...baseConfig,
     thinkingConfig: {
       includeThoughts: true,
-      thinkingLevel: 'high'
+      thinkingLevel: 'medium'
     }
   }
 }
@@ -387,7 +381,7 @@ export default async function handler(req, res) {
 
     const isDev = user.email === 'rhotonsia@gmail.com'
     const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-    const DAILY_LIMIT = 8192
+    const DAILY_LIMIT = 16000
 
     // 2. Check Daily Limit (skip for dev)
     let currentUsage = 0
@@ -441,7 +435,7 @@ export default async function handler(req, res) {
       return
     }
 
-    const normalizedMode = ALLOWED_MODES.has(mode) ? mode : ''
+    const normalizedMode = ALLOWED_MODES.has(mode) ? mode : 'ask'
     if (mode && !ALLOWED_MODES.has(mode)) {
       res.status(400).json({ error: 'Unsupported assistant mode.' })
       return
@@ -456,8 +450,8 @@ export default async function handler(req, res) {
     // action: design-build
     // -----------------------------------------------------------------------
     if (action === 'design-build') {
-      if (normalizedMode !== 'design') {
-        res.status(400).json({ error: 'Design build action is only allowed in Design mode.' })
+      if (normalizedMode !== 'agent') {
+        res.status(400).json({ error: 'Design build action is only allowed in Agent mode.' })
         return
       }
 
@@ -499,7 +493,7 @@ export default async function handler(req, res) {
           role: 'user',
           parts: [{ text: designPrompt }]
         }],
-        config: buildGenerationConfig(includeThinking)
+        config: buildGenerationConfig(includeThinking, primaryModel)
       }
 
       console.log('[AI DEBUG] Gemma input payload:', {
@@ -610,7 +604,8 @@ export default async function handler(req, res) {
           role: 'user',
           parts: [{ text: validationPrompt }]
         }],
-        config: buildGenerationConfig(includeThinking)
+        // Force no-thinking mode for validation to avoid leaking internal thoughts
+        config: buildGenerationConfig(false, primaryModel)
       }
 
       console.log('[AI DEBUG] Validation input payload:', {
@@ -635,17 +630,14 @@ export default async function handler(req, res) {
           writeSseEvent(res, 'meta', { usedModel })
 
           for await (const chunk of stream) {
-            const { thinkingText, answerText } = extractChunkTextParts(chunk)
-            const thinkingAccumulation = accumulateChunkDelta(thinkingText, fullThinking)
+            const { answerText } = extractChunkTextParts(chunk)
             const answerAccumulation = accumulateChunkDelta(answerText, fullText)
 
-            fullThinking = thinkingAccumulation.nextText
             fullText = answerAccumulation.nextText
 
-            if (!thinkingAccumulation.delta && !answerAccumulation.delta) continue
+            if (!answerAccumulation.delta) continue
 
             writeSseEvent(res, 'chunk', {
-              thinkingDelta: thinkingAccumulation.delta,
               textDelta: answerAccumulation.delta
             })
           }
@@ -673,7 +665,6 @@ export default async function handler(req, res) {
 
           writeSseEvent(res, 'complete', {
             text: rawText,
-            thinking: fullThinking,
             usedModel,
             validation: normalizedValidation
           })
@@ -692,7 +683,6 @@ export default async function handler(req, res) {
       })
 
       const rawText = String(response.text || '').trim()
-      const thinking = extractThinkingText(response)
       console.log('[AI DEBUG] Validation model output:', rawText)
 
       await trackUsage(req, response)
@@ -717,7 +707,6 @@ export default async function handler(req, res) {
 
       res.status(200).json({
         text: rawText,
-        thinking,
         usedModel,
         validation: normalizedValidation
       })
@@ -738,7 +727,7 @@ export default async function handler(req, res) {
           role: 'user',
           parts: [{ text: finalPrompt }]
         }],
-        config: buildGenerationConfig(includeThinking)
+        config: buildGenerationConfig(includeThinking, primaryModel)
       }
 
       console.log('[AI DEBUG] Chat stream input payload:', {
@@ -807,7 +796,7 @@ export default async function handler(req, res) {
         role: 'user',
         parts: [{ text: finalPrompt }]
       }],
-      config: buildGenerationConfig(includeThinking)
+      config: buildGenerationConfig(includeThinking, primaryModel)
     }
 
     console.log('[AI DEBUG] Chat input payload:', {

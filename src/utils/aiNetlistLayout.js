@@ -49,6 +49,10 @@ function parseSpiceLine(line) {
   if (tokens.length < 3) return null;
 
   const name = tokens[0];
+  // Keep parser strict enough to ignore accidental prose lines from LLM output.
+  // Accept typical SPICE labels that start with a letter (e.g., R1, VDD, RS, Cbyp)
+  if (!/^[A-Za-z]/.test(name)) return null;
+
   const prefix = name[0].toUpperCase();
 
   if (prefix === 'R') {
@@ -88,6 +92,55 @@ function parseSpiceLine(line) {
       nodes: [tokens[2], tokens[1], tokens[3]],
       value: parseValue(tokens.slice(4), '2N3904')
     };
+  }
+
+  if (prefix === 'X') {
+    if (tokens.length < 5) return null;
+
+    const subcktName = String(tokens[tokens.length - 1] || '');
+    const instanceNodes = tokens.slice(1, -1);
+    const normalizedLabel = name.replace(/^X/i, '');
+
+    if (/OPAMP/i.test(subcktName)) {
+      if (instanceNodes.length >= 5) {
+        return {
+          type: 'opamp5',
+          label: normalizedLabel,
+          nodes: instanceNodes.slice(0, 5),
+          value: subcktName
+        };
+      }
+      if (instanceNodes.length >= 3) {
+        return {
+          type: 'opamp',
+          label: normalizedLabel,
+          nodes: instanceNodes.slice(0, 3),
+          value: subcktName
+        };
+      }
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+function resolveLayoutData(layoutMap, labelUpper) {
+  if (layoutMap.has(labelUpper)) {
+    return layoutMap.get(labelUpper);
+  }
+
+  if (labelUpper.startsWith('X')) {
+    const withoutX = labelUpper.slice(1);
+    if (layoutMap.has(withoutX)) {
+      return layoutMap.get(withoutX);
+    }
+  }
+
+  const withX = `X${labelUpper}`;
+  if (layoutMap.has(withX)) {
+    return layoutMap.get(withX);
   }
 
   return null;
@@ -239,7 +292,25 @@ export function netlistToDraftSchematic(netlist) {
     }
   });
 
-  const parsed = lines.map(parseSpiceLine).filter(Boolean);
+  const parsed = [];
+  let inSubckt = false;
+
+  lines.forEach((line) => {
+    const upper = line.toUpperCase();
+    if (upper.startsWith('.SUBCKT')) {
+      inSubckt = true;
+      return;
+    }
+    if (upper.startsWith('.ENDS')) {
+      inSubckt = false;
+      return;
+    }
+    if (inSubckt) return;
+
+    const parsedLine = parseSpiceLine(line);
+    if (parsedLine) parsed.push(parsedLine);
+  });
+
   if (!parsed.length) {
     return { components: [], wires: [] };
   }
@@ -253,8 +324,8 @@ export function netlistToDraftSchematic(netlist) {
     const labelUpper = line.label.toUpperCase();
     let x, y, rotation;
     
-    if (layoutMap.has(labelUpper)) {
-      const layoutData = layoutMap.get(labelUpper);
+    const layoutData = resolveLayoutData(layoutMap, labelUpper);
+    if (layoutData) {
       x = layoutData.x;
       y = layoutData.y;
       rotation = layoutData.rotation;
@@ -289,7 +360,7 @@ export function netlistToDraftSchematic(netlist) {
   components.forEach((comp, index) => {
     // Prevent auto-flip if LLM provided [LAYOUT] or component has more than 2 pins
     const labelUpper = comp.label.toUpperCase();
-    if (layoutMap.has(labelUpper)) return;
+    if (resolveLayoutData(layoutMap, labelUpper)) return;
     const currentPins = getPins(comp);
     if (currentPins.length !== 2) return;
 

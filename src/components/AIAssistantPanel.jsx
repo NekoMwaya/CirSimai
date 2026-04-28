@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Bot, Send } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bot, Send, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -11,8 +11,8 @@ import { netlistToDraftSchematic } from '../utils/aiNetlistLayout';
 import { supabase } from '../supabaseClient';
 
 const MODELS = [
-    'gemma-4-26b-a4b-it',
-    'gemma-4-31b-it'
+    { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 (26b)', icon: '✦' },
+    { id: 'gemma-4-31b-it',     label: 'Gemma 4 (31b)', icon: '✦' }
 ];
 
 const INITIAL_MESSAGE = {
@@ -21,12 +21,12 @@ const INITIAL_MESSAGE = {
 };
 
 const MODES = [
-    { id: 'design', label: 'Design' },
-    { id: 'explain', label: 'Explain' },
-    { id: 'suggest', label: 'Suggest' }
+    { id: 'ask', label: 'Ask', icon: '💬' },
+    { id: 'agent', label: 'Agent', icon: '⚡' },
+    { id: 'planning', label: 'Plan', icon: '📋' }
 ];
 
-const DESIGN_SYSTEM_PROMPT = 'You are a circuit designer. Output only custom netlist code. Always prefix components with a * [LAYOUT] <ID> C=<Col> R=<Row> ROT=<Degrees> comment. Use a grid system where C increments left-to-right and R increments top-to-bottom. For parallel components, place them vertically in the same column (increment R). For series components, place them horizontally in the same row (increment C).';
+const DESIGN_SYSTEM_PROMPT = 'You are a circuit designer. Output only custom netlist code. REASONING DIRECTIVE: Be concise in your internal thoughts; once a solution is found, output the netlist immediately. Always prefix components with a * [LAYOUT] <ID> C=<Col> R=<Row> ROT=<Degrees> comment. Use a grid system where C increments left-to-right and R increments top-to-bottom. For parallel components, place them vertically in the same column (increment R). For series components, place them horizontally in the same row (increment C).';
 const ITERATION_SYSTEM_PROMPT = 'Fix this netlist based on the error log. Do not change the syntax.';
 
 function toSafeText(value, fallback = 'No response text returned.') {
@@ -154,15 +154,186 @@ function analyzeNetlistConnectivity(netlistText) {
     };
 }
 
+function CustomDropdown({ value, options, onChange, theme, isDarkMode, gradientBg, bgColor, icon, labelPrefix = '' }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const containerRef = useRef(null);
+    const selectedOption = options.find(o => o.id === value) || options[0];
+
+    useEffect(() => {
+        function handleClickOutside(event) {
+            if (containerRef.current && !containerRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div ref={containerRef} style={{ position: 'relative', flex: 1 }}>
+            <motion.div
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => setIsOpen(!isOpen)}
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 14px',
+                    borderRadius: '16px',
+                    border: '2px solid transparent',
+                    backgroundImage: `linear-gradient(${isDarkMode ? '#1a1a1a' : '#f5f5f5'}, ${isDarkMode ? '#1a1a1a' : '#f5f5f5'}), ${gradientBg}`,
+                    backgroundOrigin: 'border-box',
+                    backgroundClip: 'padding-box, border-box',
+                    color: theme.uiText,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+            >
+                <span style={{ fontSize: 16 }}>{selectedOption.icon || icon}</span>
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {labelPrefix}{selectedOption.label}
+                </span>
+                <motion.div
+                    animate={{ rotate: isOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ display: 'flex', alignItems: 'center' }}
+                >
+                    <ChevronDown size={14} opacity={0.6} />
+                </motion.div>
+            </motion.div>
+
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 5, scale: 1 }}
+                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                        transition={{ duration: 0.2, ease: "easeOut" }}
+                        style={{
+                            position: 'absolute',
+                            bottom: '100%',
+                            left: 0,
+                            right: 0,
+                            marginBottom: 8,
+                            background: isDarkMode ? '#1a1a1a' : '#fff',
+                            border: `1px solid ${theme.border}`,
+                            borderRadius: '12px',
+                            overflow: 'hidden',
+                            zIndex: 100,
+                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)'
+                        }}
+                    >
+                        {options.map((opt) => (
+                            <div
+                                key={opt.id}
+                                onClick={() => {
+                                    onChange(opt.id);
+                                    setIsOpen(false);
+                                }}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    padding: '10px 14px',
+                                    cursor: 'pointer',
+                                    fontSize: 13,
+                                    fontWeight: opt.id === value ? 700 : 500,
+                                    color: opt.id === value ? (isDarkMode ? '#7ecbff' : '#4a007d') : theme.uiText,
+                                    background: opt.id === value ? (isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)') : 'transparent',
+                                    transition: 'all 0.15s'
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (opt.id !== value) e.currentTarget.style.background = isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.015)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (opt.id !== value) e.currentTarget.style.background = 'transparent';
+                                }}
+                            >
+                                <span style={{ fontSize: 14 }}>{opt.icon}</span>
+                                {opt.label}
+                            </div>
+                        ))}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+function ControlBar({ model, setModel, mode, setMode, useThinking, setUseThinking, isDarkMode, theme, bgColor, gradientBg }) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CustomDropdown
+                    value={model}
+                    options={MODELS}
+                    onChange={setModel}
+                    theme={theme}
+                    isDarkMode={isDarkMode}
+                    gradientBg={gradientBg}
+                    bgColor={bgColor}
+                />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CustomDropdown
+                    value={mode}
+                    options={MODES}
+                    onChange={setMode}
+                    theme={theme}
+                    isDarkMode={isDarkMode}
+                    gradientBg={gradientBg}
+                    bgColor={bgColor}
+                />
+
+                <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setUseThinking(prev => !prev)}
+                    title={useThinking ? 'Deep Reasoning ON' : 'Deep Reasoning OFF'}
+                    style={{
+                        flexShrink: 0,
+                        border: '2px solid transparent',
+                        borderRadius: '16px',
+                        padding: '9px 16px',
+                        backgroundImage: useThinking
+                            ? `linear-gradient(${isDarkMode ? '#1a1a1a' : '#f5f5f5'}, ${isDarkMode ? '#1a1a1a' : '#f5f5f5'}), ${gradientBg}`
+                            : `linear-gradient(${isDarkMode ? '#1a1a1a' : '#f5f5f5'}, ${isDarkMode ? '#1a1a1a' : '#f5f5f5'}), linear-gradient(${theme.border}, ${theme.border})`,
+                        backgroundOrigin: 'border-box',
+                        backgroundClip: 'padding-box, border-box',
+                        color: useThinking ? (isDarkMode ? '#7ecbff' : '#4a007d') : theme.uiText,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        transition: 'all 0.2s',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        opacity: useThinking ? 1 : 0.7
+                    }}
+                >
+                    <span style={{ filter: useThinking ? 'none' : 'grayscale(1) opacity(0.6)' }}>🧠</span>
+                    {useThinking ? 'On' : 'Off'}
+                </motion.button>
+            </div>
+        </div>
+    );
+}
+
 export default function AIAssistantPanel({ isVisible, onClose, currentNetlist }) {
     const { theme, isDarkMode, setComponents, setWires, saveState } = useCircuit();
     const [messages, setMessages] = useState([INITIAL_MESSAGE]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [isStreamingChat, setIsStreamingChat] = useState(false);
-    const [model, setModel] = useState(MODELS[0]);
-    const [includeThinking, setIncludeThinking] = useState(true);
-    const [mode, setMode] = useState('');
+    const [model, setModel] = useState(MODELS[0].id);
+    const [useThinking, setUseThinking] = useState(false);
+    const [mode, setMode] = useState('ask');
     const [pendingIteration, setPendingIteration] = useState(null);
     const messagesEndRef = useRef(null);
     const messageHistoryRef = useRef([
@@ -409,8 +580,8 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
             action: 'validate-intent',
             message: prompt,
             model,
-            includeThinking,
-            mode: 'design',
+            includeThinking: false,
+            mode: 'agent',
             previousNetlist: generatedNetlist,
             simulationOutput,
             intentSummary: prompt,
@@ -419,14 +590,7 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
 
         let validationData = null;
         try {
-            validationData = await streamFromAI(validationPayload, {
-                signal,
-                onChunk: ({ thinkingDelta }) => {
-                    if (typeof thinkingDelta === 'string' && thinkingDelta) {
-                        onThinkingDelta?.(thinkingDelta);
-                    }
-                }
-            });
+            validationData = await streamFromAI(validationPayload, { signal });
         } catch (error) {
             if (error?.name === 'AbortError') {
                 throw error;
@@ -470,8 +634,8 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
             action: 'design-build',
             message: prompt,
             model,
-            includeThinking,
-            mode: 'design',
+            includeThinking: useThinking,
+            mode: 'agent',
             circuitNetlist: currentNetlist || '',
             messageHistory: history,
             iterationPhase
@@ -484,7 +648,7 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
             role: 'assistant',
             text: 'Generating netlist...',
             thinking: '',
-            thinkingPending: includeThinking
+            thinkingPending: useThinking
         }]);
 
         const designData = await streamFromAI(designPayload, {
@@ -535,41 +699,25 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
             role: 'assistant',
             text: 'Validating generated circuit...',
             thinking: '',
-            thinkingPending: includeThinking
+            thinkingPending: false
         }]);
 
         const { validation, simulationOutput, validationThinking } = await validateGeneratedCircuit(
             prompt,
             generatedNetlist,
             messageHistoryRef.current,
-            {
-                signal,
-                onThinkingDelta: (thinkingDelta) => {
-                    if (!isRequestActive(requestId)) return;
-                    setMessages(prev => prev.map((msg) => {
-                        if (msg.id !== validationMessageId) return msg;
-                        return {
-                            ...msg,
-                            thinking: `${msg.thinking || ''}${thinkingDelta}`,
-                            thinkingPending: true
-                        };
-                    }));
-                }
-            }
+            { signal }
         );
         throwIfAborted(signal);
 
+        const statusIcon = validation.intended ? '✅' : '⚠️';
         const validationText = [
-            `Validation result: ${validation.intended ? 'Matches intended behavior' : 'May not match intended behavior'}`,
-            `Confidence: ${Number(validation.confidence || 0).toFixed(2)}`,
-            `Reason: ${validation.reason || 'No reason provided.'}`,
-            `Suggested fix: ${validation.suggestedFix || 'No suggestion provided.'}`,
+            `${statusIcon} **${validation.intended ? 'Circuit matches intended behavior' : 'Circuit may not match intended behavior'}**`,
             '',
-            'Simulation output (debug):',
-            '```text',
-            simulationOutput || 'No ngspice output.',
-            '```'
-        ].join('\n');
+            `**Confidence:** ${Math.round(Number(validation.confidence || 0) * 100)}%`,
+            `**Reason:** ${validation.reason || 'No reason provided.'}`,
+            validation.suggestedFix ? `**Suggested fix:** ${validation.suggestedFix}` : ''
+        ].filter(Boolean).join('\n');
 
         if (!isRequestActive(requestId)) return;
 
@@ -602,9 +750,11 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
         }
     };
 
-    const sendMessage = async () => {
-        const prompt = input.trim();
+    const sendMessage = async (overridePrompt, overrideMode) => {
+        const prompt = (typeof overridePrompt === 'string' ? overridePrompt : input).trim();
         if (!prompt || loading) return;
+
+        const activeMode = overrideMode || mode;
 
         const { id: requestId, signal } = beginRequest();
 
@@ -616,13 +766,15 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
 
         messageHistoryRef.current = baseHistory;
         setMessages(prev => [...prev, userMessage]);
-        setInput('');
+        if (typeof overridePrompt !== 'string') {
+            setInput('');
+        }
         setLoading(true);
 
         let streamingAssistantId = null;
 
         try {
-            if (mode === 'design') {
+            if (activeMode === 'agent') {
                 await runDesignPipeline({
                     prompt,
                     history: baseHistory,
@@ -643,7 +795,7 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                     role: 'assistant',
                     text: '',
                     thinking: '',
-                    thinkingPending: includeThinking
+                    thinkingPending: false  // only set true on actual chunk arrival if useThinking is on
                 }]);
                 setIsStreamingChat(true);
 
@@ -651,8 +803,8 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                     action: 'chat',
                     message: prompt,
                     model,
-                    includeThinking,
-                    mode: mode || null,
+                    includeThinking: useThinking,
+                    mode: activeMode || null,
                     circuitNetlist: currentNetlist || '',
                     messageHistory: baseHistory
                 }, {
@@ -670,7 +822,8 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                                 ...msg,
                                 text: `${msg.text || ''}${safeTextDelta}`,
                                 thinking: `${msg.thinking || ''}${safeThinkingDelta}`,
-                                thinkingPending: true
+                                // only flip thinkingPending true if we actually got thinking content
+                                thinkingPending: safeThinkingDelta ? true : msg.thinkingPending
                             };
                         }));
                     }
@@ -680,13 +833,18 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                 const finalAnswer = toSafeText(streamData?.text || answerAccumulator, 'No response text returned.');
                 const finalThinking = normalizeThinking(streamData?.thinking);
 
+                const looksLikePlan = activeMode === 'planning'
+                    && finalAnswer.length > 150
+                    && /(?:^|\n)\s*(?:-|\d+\.|•)\s/.test(finalAnswer);
+
                 setMessages(prev => prev.map((msg) => {
                     if (msg.id !== assistantMessageId) return msg;
                     return {
                         ...msg,
                         text: finalAnswer,
                         thinking: finalThinking || msg.thinking || '',
-                        thinkingPending: false
+                        thinkingPending: false,
+                        isPlan: looksLikePlan
                     };
                 }));
 
@@ -775,7 +933,16 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
     const gradientBg = isDarkMode ? 'linear-gradient(90deg, #4a007d, #004e92, #004989)' : 'linear-gradient(90deg, #c2a8f7, #5ce1e6)';
     const gradientBorder = isDarkMode ? 'linear-gradient(180deg, #4a007d, #004e92, #004989)' : 'linear-gradient(180deg, #c2a8f7, #5ce1e6)';
 
+    const PLACEHOLDERS = {
+        ask: 'Ask anything about circuits or SPICE...',
+        agent: 'Describe a circuit to build (e.g. "low-pass filter")...',
+        planning: 'Describe your circuit goal for a step-by-step plan...'
+    };
+    const inputPlaceholder = PLACEHOLDERS[mode] || 'Type a command...';
+
     return (
+        <>
+        <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.5;transform:scale(0.8);} }`}</style>
         <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -836,90 +1003,11 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                 </button>
             </div>
 
-            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <select
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: `1px solid ${theme.border}`,
-                            background: theme.inputBg,
-                            color: theme.uiText,
-                            fontSize: 13,
-                            outline: 'none',
-                            cursor: 'pointer'
-                        }}
-                    >
-                        {MODELS.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                        ))}
-                    </select>
-                </div>
-
-                <label
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        marginBottom: 12,
-                        fontSize: 12,
-                        color: theme.uiText,
-                        opacity: 0.9,
-                        cursor: 'pointer'
-                    }}
-                >
-                    <input
-                        type="checkbox"
-                        checked={includeThinking}
-                        onChange={(e) => setIncludeThinking(e.target.checked)}
-                        style={{ cursor: 'pointer' }}
-                    />
-                    Show Gemma thinking (if available)
-                </label>
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                    {MODES.map((m) => {
-                        const isActive = mode === m.id;
-                        return (
-                            <button
-                                key={m.id}
-                                onClick={() => {
-                                    cancelActiveRequest({ removeTransientMessages: true });
-                                    setMode((prev) => {
-                                        const nextMode = prev === m.id ? '' : m.id;
-                                        if (prev && nextMode && prev !== nextMode) {
-                                            resetAssistantSession();
-                                        }
-                                        return nextMode;
-                                    });
-                                }}
-                                style={{
-                                    flex: 1,
-                                    border: '2px solid transparent',
-                                    borderRadius: '6px',
-                                    padding: '6px 8px',
-                                    background: `linear-gradient(${bgColor}, ${bgColor}) padding-box, ${gradientBg} border-box`,
-                                    color: isActive ? (isDarkMode ? '#004e92' : '#c2a8f7') : theme.uiText,
-                                    cursor: 'pointer',
-                                    fontSize: 12,
-                                    fontWeight: isActive ? 'bold' : '600',
-                                    opacity: isActive ? 1 : 0.7,
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                {m.label}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {messages.map((msg, idx) => {
                     const isUser = msg.role === 'user';
+                    const hasPlanTag = !isUser && msg.text && msg.text.includes('<PLAN>');
+                    const cleanText = msg.text ? msg.text.replace(/<\/?PLAN>/g, '').trim() : '';
                     return (
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
@@ -955,11 +1043,47 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                                                 remarkPlugins={[remarkGfm, remarkMath]}
                                                 rehypePlugins={[rehypeKatex]}
                                             >
-                                                {toSafeText(msg.text, '')}
+                                                {toSafeText(isUser ? msg.text : cleanText, '')}
                                             </ReactMarkdown>
                                         </div>
 
-                                        {(msg.thinkingPending || msg.thinking) ? (
+                                        {/* Start Implementation CTA — only for messages with <PLAN> tag */}
+                                        {hasPlanTag && !msg.thinkingPending && (
+                                            <button
+                                                onClick={() => {
+                                                    setMode('agent');
+                                                    setUseThinking(true);
+                                                    const buildPrompt = `Based on this plan, implement the full circuit now:\n\n${cleanText}`;
+                                                    sendMessage(buildPrompt, 'agent');
+                                                }}
+                                                disabled={loading}
+                                                style={{
+                                                    alignSelf: 'flex-start',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 7,
+                                                    border: '2px solid transparent',
+                                                    borderRadius: '12px',
+                                                    padding: '8px 16px',
+                                                    background: loading
+                                                        ? theme.border
+                                                        : `linear-gradient(${bgColor}, ${bgColor}) padding-box, ${gradientBg} border-box`,
+                                                    color: isDarkMode ? '#7ecbff' : '#4a007d',
+                                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                                    fontSize: 13,
+                                                    fontWeight: 700,
+                                                    letterSpacing: '0.3px',
+                                                    transition: 'all 0.2s',
+                                                    marginTop: 4
+                                                }}
+                                                onMouseEnter={(e) => { if (!loading) e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                                                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                                            >
+                                                🚀 Start Implementation
+                                            </button>
+                                        )}
+
+                                        {(msg.thinkingPending || (msg.thinking && msg.thinking.trim())) ? (
                                             <details
                                                 open={Boolean(msg.thinkingPending)}
                                                 style={{
@@ -975,9 +1099,21 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                                                         fontSize: 12,
                                                         fontWeight: 600,
                                                         color: isDarkMode ? '#5aa3ff' : '#3b3bb3',
-                                                        userSelect: 'none'
+                                                        userSelect: 'none',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 6
                                                     }}
                                                 >
+                                                    {msg.thinkingPending && (
+                                                        <span style={{
+                                                            display: 'inline-block',
+                                                            width: 7, height: 7,
+                                                            borderRadius: '50%',
+                                                            background: isDarkMode ? '#5aa3ff' : '#4a007d',
+                                                            animation: 'pulse 1.2s ease-in-out infinite'
+                                                        }} />
+                                                    )}
                                                     Thinking
                                                 </summary>
                                                 {msg.thinking ? (
@@ -1010,7 +1146,20 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                 <div ref={messagesEndRef} />
             </div>
 
-            <div style={{ padding: '16px 20px', borderTop: `1px solid ${theme.border}`, background: isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)' }}>
+            <div style={{ padding: '10px 20px 12px', borderTop: `1px solid ${theme.border}`, background: isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)' }}>
+                <ControlBar
+                    model={model} setModel={setModel}
+                    mode={mode} setMode={(nextMode) => {
+                        cancelActiveRequest({ removeTransientMessages: true });
+                        if (mode && nextMode !== mode) resetAssistantSession();
+                        setMode(nextMode);
+                        if (nextMode === 'agent') setUseThinking(true);
+                        else setUseThinking(false);
+                    }}
+                    useThinking={useThinking} setUseThinking={setUseThinking}
+                    isDarkMode={isDarkMode} theme={theme}
+                    bgColor={bgColor} gradientBg={gradientBg}
+                />
                 {pendingIteration && (
                     <div style={{
                         marginBottom: 10,
@@ -1065,7 +1214,7 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') sendMessage();
                         }}
-                        placeholder="Type a command..."
+                        placeholder={inputPlaceholder}
                         style={{
                             flex: 1,
                             background: 'transparent',
@@ -1097,5 +1246,6 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                 </div>
             </div>
         </motion.div>
+        </>
     );
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCircuit } from '../context/CircuitContext';
 
 // BJT model options (IDEAL first for theoretical silicon BJT with VBE=0.7V)
@@ -77,6 +77,33 @@ export default function PropertiesPanel() {
     const isOpamp = selectedComponent.type === 'opamp' || selectedComponent.type === 'opamp5';
     const isTransistor = isBjt || isMosfet || isJfet;
 
+    const [labelValue, setLabelValue] = useState(selectedComponent.label || '');
+
+    useEffect(() => {
+        setLabelValue(selectedComponent.label || '');
+    }, [selectedComponent.label]);
+
+    const commitLabel = () => {
+        let newLabel = String(labelValue || '').trim();
+        if (!newLabel) return; // ignore empty
+
+        // Ensure label is unique among components
+        if (components.some(c => c.label === newLabel && c.id !== selectedComponent.id)) {
+            // Append numeric suffix until unique
+            let count = 1;
+            let candidate = `${newLabel}${count}`;
+            while (components.some(c => c.label === candidate)) {
+                count++;
+                candidate = `${newLabel}${count}`;
+            }
+            newLabel = candidate;
+        }
+
+        if (newLabel !== selectedComponent.label) {
+            updateComponent(selectedComponent.id, { label: newLabel });
+        }
+    };
+
     return (
         <div style={{
             position: 'absolute', top: 10, right: 10, zIndex: 10,
@@ -89,9 +116,11 @@ export default function PropertiesPanel() {
             <div style={{marginBottom: 10}}>
                 <label style={{display:'block', fontSize: 12, marginBottom: 4}}>Label</label>
                 <input 
-                    value={selectedComponent.label} 
-                    disabled
-                    style={{width: '100%', padding: 5, background: theme.btnBg, color: theme.uiText, border: `1px solid ${theme.border}`}} 
+                    value={labelValue}
+                    onChange={(e) => setLabelValue(e.target.value)}
+                    onBlur={commitLabel}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { commitLabel(); e.currentTarget.blur(); } }}
+                    style={{width: '100%', padding: 5, background: theme.inputBg, color: theme.uiText, border: `1px solid ${theme.border}`}} 
                 />
             </div>
             

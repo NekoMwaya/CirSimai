@@ -88,5 +88,143 @@ R1 2 0 1k
 .TRAN 20.0u 10.0m
 .PRINT TRAN v(1) v(2) VAC1#branch @d1[id] @R1[i]
 .END`
-  }
+  },
+  {
+    id: 'voltage-divider',
+    title: 'Voltage divider',
+    description: 'Simple voltage divider circuit.',
+    tags: ['voltage', 'divider', 'passive'],
+    netlist: `
+* [LAYOUT] V1 C=0 R=0 ROT=270
+* [LAYOUT] R1 C=1 R=-1 ROT=90
+* [LAYOUT] R2 C=1 R=1 ROT=90
+V1 1 0 DC 5V
+R1 1 2 1k
+R2 2 0 10k
+.OP
+.TRAN 20.0u 10.0m
+.PRINT TRAN v(1) v(2) V1#branch @R1[i] @R2[i]
+.END`
+  },
+  {
+    id: 'diode-rectifier',
+    title: 'Full wave rectifier',
+    description: 'Simple full-wave rectifier circuit.',
+    tags: ['diode', 'rectifier', 'power', 'ac-dc'],
+    netlist: `
+* [LAYOUT] VAC1 C=0 R=0 ROT=90
+* [LAYOUT] D1 C=1 R=-1 ROT=0
+* [LAYOUT] D2 C=2 R=-1 ROT=0
+* [LAYOUT] D3 C=1 R=0 ROT=0
+* [LAYOUT] D4 C=2 R=0 ROT=0
+* [LAYOUT] R1 C=3 R=0 ROT=90
+.options width=1024 abstol=1e-9 reltol=0.01 vntol=1e-4 gmin=1e-12 method=gear
+.MODEL IDEAL D (IS=1e-14 N=1 RS=0.001 BV=100 IBV=1e-10)
+VAC1 2 1 SIN(0 5 1000)
+D1 0 1 IDEAL
+D2 1 3 IDEAL
+D3 0 2 IDEAL
+D4 2 3 IDEAL
+R1 3 0 1k
+.OP
+.TRAN 20.0u 10.0m
+.PRINT TRAN v(1) v(2) v(3) VAC1#branch @d1[id] @d2[id] @d3[id] @d4[id] @R1[i]
+.END`
+  },
+  {
+    id: 'diode-rectifier',
+    title: 'Full wave rectifier with smoothing capacitor',
+    description: 'Full-wave rectifier circuit with smoothing capacitor',
+    tags: ['diode', 'rectifier', 'power', 'ac-dc','capacitor'],
+    netlist: `
+* [LAYOUT] VAC1 C=0 R=0 ROT=90
+* [LAYOUT] D1 C=1 R=-1 ROT=0
+* [LAYOUT] D2 C=2 R=-1 ROT=0
+* [LAYOUT] D3 C=1 R=0 ROT=0
+* [LAYOUT] D4 C=2 R=0 ROT=0
+* [LAYOUT] R1 C=4 R=0 ROT=90
+* [LAYOUT] C1 C=3 R=0 ROT=90
+.options width=1024 abstol=1e-9 reltol=0.01 vntol=1e-4 gmin=1e-12 method=gear
+.MODEL IDEAL D (IS=1e-14 N=1 RS=0.001 BV=100 IBV=1e-10)
+VAC1 2 1 SIN(0 5 1000)
+D1 0 1 IDEAL
+D2 1 3 IDEAL
+D3 0 2 IDEAL
+D4 2 3 IDEAL
+R1 3 0 1k
+C1 3 0 1uF
+.OP
+.TRAN 20.0u 10.0m
+.PRINT TRAN v(1) v(2) v(3) VAC1#branch @d1[id] @d2[id] @d3[id] @d4[id] @R1[i] @C1[i]
+.END`
+  },
+  {
+    id: 'Differential amplifier',
+    title: 'Differential amplifier',
+    description: 'Differential amplifier circuit',
+    tags: ['amplifier', 'differential', 'operational amplifier', 'op-amp'],
+    netlist: `
+* [LAYOUT] U1 C=2 R=0 ROT=0
+* [LAYOUT] R1 C=0 R=0 ROT=0
+* [LAYOUT] R2 C=0 R=1 ROT=0
+* [LAYOUT] R3 C=1 R=1 ROT=90
+* [LAYOUT] R4 C=2 R=-1 ROT=0
+* [LAYOUT] V1 C=-1 R=1 ROT=270
+* [LAYOUT] V2 C=0 R=2 ROT=270
+* [LAYOUT] R5 C=3 R=1 ROT=90
+* Custom Ideal Op-Amp for U1
+.SUBCKT IDEAL_OPAMP_U1 inp inm out
+Rin inp inm 10Meg
+Egain out 0 inp inm 100000
+.ENDS IDEAL_OPAMP_U1
+XU1 1 2 3 IDEAL_OPAMP_U1
+R1 4 1 1k
+R2 5 2 2k
+R3 2 0 5k
+R4 1 3 10k
+V1 4 0 DC 5V
+V2 5 0 DC 5V
+R5 3 0 500
+.OP
+.TRAN 20.0u 10.0m
+.PRINT TRAN v(1) v(2) v(3) v(4) v(5) @R1[i] @R2[i] @R3[i] @R4[i] V1#branch V2#branch @R5[i]
+.END`
+  },
+  {
+    id: 'MOSFET Common-Source Amplifier',
+    title: 'Common Source Amplifier',
+    description: 'Common source amplifier circuit using NMOS transistor',
+    tags: ['amplifier', 'common-source', 'transistor','mosfet'],
+    netlist: `
+* [LAYOUT] VAC1 C=0 R=0 ROT=180
+* [LAYOUT] R1 C=1 R=-1 ROT=90
+* [LAYOUT] R2 C=1 R=1 ROT=90
+* [LAYOUT] R3 C=3 R=-1 ROT=90
+* [LAYOUT] R4 C=3 R=1 ROT=90
+* [LAYOUT] C1 C=4 R=1 ROT=90
+* [LAYOUT] C2 C=4 R=-1 ROT=0
+* [LAYOUT] R5 C=5 R=0 ROT=90
+* [LAYOUT] M1 C=2 R=0 ROT=0
+* [LAYOUT] C3 C=1 R=0 ROT=0
+* [LAYOUT] V1 C=2 R=-2 ROT=90
+.options width=1024
+.MODEL 2N7000 NMOS (VTO=2.0 KP=30m LAMBDA=0.04 RD=1 RS=1 CBD=40p CBS=40p)
+.MODEL BS170 NMOS (VTO=1.5 KP=50m LAMBDA=0.03 RD=0.5 RS=0.5 CBD=60p CBS=60p)
+.MODEL IDEAL_NMOS_M1 NMOS (VTO=1 KP=0.00004938271604938272 LAMBDA=0.01)
+VAC1 0 1 SIN(0 5 1000)
+R1 2 3 200k
+R2 3 0 100k
+R3 2 4 2k
+R4 5 0 1k
+C1 5 0 1uF
+C2 4 6 1uF
+R5 6 0 1k
+M1 4 3 5 5 IDEAL_NMOS_M1
+C3 1 3 1uF
+V1 2 0 DC 5V
+.OP
+.TRAN 20.0u 10.0m
+.PRINT TRAN v(1) v(2) v(3) v(4) v(5) v(6) VAC1#branch @R1[i] @R2[i] @R3[i] @R4[i] @C1[i] @C2[i] @R5[i] @m1[id] @C3[i] V1#branch
+.END`
+  },
 ];
