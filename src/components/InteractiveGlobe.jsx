@@ -1,5 +1,5 @@
-import React, { useRef, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { useRef, useMemo, Suspense, useEffect } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -61,6 +61,23 @@ const DottedGlobe = ({ dotColor = '#5ce1e6' }) => {
   );
 };
 
+const CleanupRenderer = () => {
+  const { gl } = useThree();
+  useEffect(() => {
+    return () => {
+      if (gl) {
+        // Aggressively dispose of the WebGL context on unmount
+        // to prevent context bleeding into other routes (like the simulator)
+        gl.dispose();
+        // Optional: Forcefully lose context to guarantee browser cleanup immediately
+        const extension = gl.getExtension('WEBGL_lose_context');
+        if (extension) extension.loseContext();
+      }
+    };
+  }, [gl]);
+  return null;
+};
+
 const InteractiveGlobe = ({ color = '#5ce1e6', height = '500px' }) => {
   return (
     <div style={{ width: '100%', height: height, cursor: 'grab' }}>
@@ -79,6 +96,7 @@ const InteractiveGlobe = ({ color = '#5ce1e6', height = '500px' }) => {
           />
 
           <Stars radius={100} depth={50} count={500} factor={4} saturation={0} fade speed={1} />
+          <CleanupRenderer />
         </Canvas>
       </Suspense>
     </div>

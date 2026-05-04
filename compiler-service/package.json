@@ -1,0 +1,17 @@
+{
+  "name": "cirsim-compiler-service",
+  "version": "1.0.0",
+  "description": "Cloud compiler for Arduino via Fly.io",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "fs-extra": "^11.2.0",
+    "p-limit": "^5.0.0",
+    "uuid": "^9.0.1"
+  }
+}

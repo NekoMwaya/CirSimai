@@ -49,9 +49,39 @@ function isRateLimitError(error) {
   )
 }
 
-function getModeInstruction(mode, circuitNetlist) {
+function getModeInstruction(mode, circuitNetlist, isEmbedded) {
   const referenceNetlist = String(circuitNetlist || '').trim() || '* Empty Canvas';
 
+  if (isEmbedded) {
+    if (mode === 'agent') {
+      return [
+        'You are an autonomous embedded systems engineer.',
+        'Write the required Arduino C++ code inside a single ```cpp code block.',
+        'Then, provide clear and organized wiring instructions to the user. Use markdown tables or bullet points so it is highly readable.',
+        'DO NOT output any SPICE netlists.',
+        `Current Embedded Canvas Connections:\n${referenceNetlist}`
+      ].join('\n\n')
+    }
+
+    if (mode === 'planning') {
+      return [
+        'You are an embedded hardware and software architecture planner.',
+        'Outline the steps to build the embedded circuit, including wiring and software structure.',
+        'Wrap your entire step-by-step blueprint inside <PLAN> and </PLAN> tags.',
+        'Make the wiring instructions organized and easy to read.',
+        `Current Embedded Canvas Connections:\n${referenceNetlist}`
+      ].join('\n\n')
+    }
+
+    // Default to 'ask'
+    return [
+      'You are an embedded engineering copilot.',
+      'Answer the user\'s questions regarding Arduino code, Wokwi components, wiring, or theory clearly and concisely.',
+      `Current Embedded Canvas Connections:\n${referenceNetlist}`
+    ].join('\n\n')
+  }
+
+  // Original Circuit SPICE Logic
   if (mode === 'agent') {
     return [
       'You are an autonomous circuit engineering agent.',
@@ -424,6 +454,7 @@ export default async function handler(req, res) {
     const messageHistory = sanitizeMessageHistory(body.messageHistory, message)
     const includeThinking = parseBoolean(body.includeThinking, true)
     const streamRequested = parseBoolean(body.stream, false)
+    const isEmbedded = parseBoolean(body.isEmbedded, false)
 
     if (!message) {
       res.status(400).json({ error: 'Message is required.' })
@@ -441,7 +472,7 @@ export default async function handler(req, res) {
       return
     }
 
-    const modeInstruction = getModeInstruction(normalizedMode, circuitNetlist)
+    const modeInstruction = getModeInstruction(normalizedMode, circuitNetlist, isEmbedded)
     const ai = new GoogleGenAI({ apiKey })
     const primaryModel = model
     const fallbackModel = getAlternateModel(primaryModel)

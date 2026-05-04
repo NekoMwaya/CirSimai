@@ -325,8 +325,15 @@ function ControlBar({ model, setModel, mode, setMode, useThinking, setUseThinkin
     );
 }
 
-export default function AIAssistantPanel({ isVisible, onClose, currentNetlist }) {
-    const { theme, isDarkMode, setComponents, setWires, saveState } = useCircuit();
+export default function AIAssistantPanel({ isVisible, onClose, currentNetlist, isEmbedded = false, onCodeUpdate }) {
+    const circuitCtx = useCircuit() || {};
+    const theme = circuitCtx.theme || {
+        bg: '#121212', border: '#555', uiBg: '#2a2a2a', uiText: '#fff', btnBg: '#444'
+    };
+    const isDarkMode = circuitCtx.isDarkMode !== undefined ? circuitCtx.isDarkMode : true;
+    const setComponents = circuitCtx.setComponents || (() => {});
+    const setWires = circuitCtx.setWires || (() => {});
+    const saveState = circuitCtx.saveState || (() => {});
     const [messages, setMessages] = useState([INITIAL_MESSAGE]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -774,7 +781,7 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
         let streamingAssistantId = null;
 
         try {
-            if (activeMode === 'agent') {
+            if (activeMode === 'agent' && !isEmbedded) {
                 await runDesignPipeline({
                     prompt,
                     history: baseHistory,
@@ -806,7 +813,8 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                     includeThinking: useThinking,
                     mode: activeMode || null,
                     circuitNetlist: currentNetlist || '',
-                    messageHistory: baseHistory
+                    messageHistory: baseHistory,
+                    isEmbedded
                 }, {
                     signal,
                     onChunk: ({ textDelta, thinkingDelta }) => {
@@ -849,6 +857,13 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist })
                 }));
 
                 messageHistoryRef.current = [...baseHistory, { role: 'assistant', content: finalAnswer }];
+
+                if (isEmbedded && onCodeUpdate && finalAnswer) {
+                    const codeMatch = finalAnswer.match(/```(?:cpp|c\+\+|c|arduino)?\s*([\s\S]*?)```/i);
+                    if (codeMatch && codeMatch[1]) {
+                        onCodeUpdate(codeMatch[1].trim());
+                    }
+                }
             }
         } catch (error) {
             if (error?.name === 'AbortError') {

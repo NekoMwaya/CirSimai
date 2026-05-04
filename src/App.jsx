@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import CircuitSimulator from './pages/CircuitSimulator';
 import EmbeddedSimulator from './pages/EmbeddedSimulator';
+import EmbeddedTest from './pages/EmbeddedTest';
 import Enterprise from './pages/Enterprise';
 import Pricing from './pages/Pricing';
 import ContactUs from './pages/ContactUs';
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/contact" element={<ContactUs />} />
           <Route path="/embedded" element={<EmbeddedSimulator />} />
+          <Route path="/embedded/test" element={<EmbeddedTest />} />
 
           {/* /simulator is protected — guests are redirected to /auth */}
           <Route
