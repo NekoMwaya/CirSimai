@@ -73,7 +73,11 @@ const DemoBrowser = ({ videoSrc, accentColor = '#5ce1e6' }) => {
         </div>
 
         {/* 3. The Actual Video */}
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '21/9', background: '#000' }}>
+        {/* 3. The Actual Video */}
+        <div 
+          style={{ position: 'relative', width: '100%', background: '#000' }} 
+          className="demo-video-container"
+        >
           {videoSrc ? (
             <video
               src={videoSrc}

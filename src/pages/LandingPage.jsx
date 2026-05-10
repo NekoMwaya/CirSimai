@@ -53,6 +53,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.1, ease: "easeOut" }}
+            className="mobile-h1"
             style={{ fontSize: 'Clamp(50px, 8vw, 84px)', fontWeight: '800', lineHeight: '1.05', letterSpacing: '-2px', marginBottom: '24px' }}
           >
             Bridging the AI gap for<br />
@@ -65,6 +66,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+            className="mobile-h2"
             style={{ fontSize: 'Clamp(20px, 3vw, 28px)', fontWeight: '400', color: '#94a3b8', marginBottom: '48px', maxWidth: '800px', margin: '0 auto 48px auto' }}
           >
             The World's First AI-Powered circuit simulator.
@@ -99,24 +101,24 @@ export default function LandingPage() {
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.8 }}
             className="mobile-grid"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '64px', alignItems: 'center' }}
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 350px), 1fr))', gap: '64px', alignItems: 'center' }}
           >
-            <div>
+            <div className="mobile-center-text">
               <h2 className="mobile-title" style={{ fontSize: '40px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-1px' }}>Our Vision</h2>
-              <p style={{ fontSize: '18px', color: '#94a3b8', lineHeight: '1.7', marginBottom: '24px' }}>
+              <p className="mobile-text" style={{ fontSize: '18px', color: '#94a3b8', lineHeight: '1.7', marginBottom: '24px' }}>
                 Founded by Tan Kang and Lee Ken Hyi, Undergraduates at Xiamen University Malaysia studying Robotics and Automation Engineering.
               </p>
-              <p style={{ fontSize: '18px', color: '#94a3b8', lineHeight: '1.7' }}>
+              <p className="mobile-text" style={{ fontSize: '18px', color: '#94a3b8', lineHeight: '1.7' }}>
                 Our company vision is to integrate AI heavily into hardware simulations. We are solving the harsh reality of spatial awareness for current AI, paving the way for further improvements as AI models advance nearer to AGI.
               </p>
             </div>
 
             <div style={{ position: 'relative' }}>
               <div style={{ position: 'absolute', top: '-20px', left: '-20px', right: '20px', bottom: '20px', border: '1px solid rgba(92, 225, 230, 0.3)', borderRadius: '16px' }} />
-              <div style={{ background: '#1e293b', padding: '48px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 1, boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+              <div style={{ background: '#1e293b', padding: 'Clamp(24px, 5vw, 48px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 1, boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
                 <Activity color="#5ce1e6" size={48} style={{ marginBottom: '24px' }} />
-                <h3 style={{ fontSize: '28px', fontWeight: '700', marginBottom: '16px' }}>Spatial Awareness for AI</h3>
-                <p style={{ color: '#cbd5e1', lineHeight: '1.7', fontSize: '16px' }}>
+                <h3 className="mobile-subtitle" style={{ fontSize: '28px', fontWeight: '700', marginBottom: '16px' }}>Spatial Awareness for AI</h3>
+                <p className="mobile-text" style={{ color: '#cbd5e1', lineHeight: '1.7', fontSize: '16px' }}>
                   Current generation Large Language Models persistently struggle with spatial reasoning in 2D hardware topologies. CirSimAI provides the ultimate bridging mechanism allowing generative models to natively "see" and interact with the circuit schema.
                 </p>
               </div>
@@ -190,11 +192,11 @@ export default function LandingPage() {
               Our simulation engine is distributed across global edge nodes, ensuring low latency for hardware engineers from Surabaya to Malaysia and beyond.
             </p>
             <div className="mobile-flex-col" style={{ display: 'flex', gap: '16px', justifyContent: 'flex-start' }}>
-              <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
+              <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)', width: '100%', maxWidth: '200px' }}>
                 <div style={{ color: '#5ce1e6', fontWeight: '700', fontSize: '24px' }}>99.9%</div>
                 <div style={{ color: '#64748b', fontSize: '14px' }}>Uptime</div>
               </div>
-              <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
+              <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)', width: '100%', maxWidth: '200px' }}>
                 <div style={{ color: '#c2a8f7', fontWeight: '700', fontSize: '24px' }}>&lt;50ms</div>
                 <div style={{ color: '#64748b', fontSize: '14px' }}>Latency</div>
               </div>

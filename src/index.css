@@ -140,4 +140,32 @@ body {
   .mobile-center-text {
     text-align: center !important;
   }
+
+  .mobile-h1 {
+    font-size: Clamp(36px, 10vw, 48px) !important;
+    line-height: 1.1 !important;
+  }
+
+  .mobile-h2 {
+    font-size: Clamp(18px, 5vw, 22px) !important;
+  }
+
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  .mobile-show {
+    display: block !important;
+  }
 }
+
+.demo-video-container {
+  aspect-ratio: 21/9;
+}
+
+@media (max-width: 768px) {
+  .demo-video-container {
+    aspect-ratio: 16/9;
+  }
+}
+

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, Zap, LogOut, User } from 'lucide-react';
+import { ChevronDown, Zap, LogOut, User, Menu, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const userMenuRef = useRef(null);
@@ -32,6 +33,7 @@ export default function Header() {
   const handleSignOut = async () => {
     await signOut();
     setUserMenuOpen(false);
+    setMobileMenuOpen(false);
     navigate('/');
   };
 
@@ -50,14 +52,14 @@ export default function Header() {
       transition={{ type: 'spring', stiffness: 100 }}
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
-        background: scrolled ? 'rgba(2, 6, 23, 0.85)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(16px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(255,255,255,0.05)' : 'none',
+        background: scrolled || mobileMenuOpen ? 'rgba(2, 6, 23, 0.95)' : 'transparent',
+        backdropFilter: scrolled || mobileMenuOpen ? 'blur(16px)' : 'none',
+        borderBottom: (scrolled || mobileMenuOpen) ? '1px solid rgba(255,255,255,0.05)' : 'none',
         transition: 'all 0.3s ease'
       }}
     >
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }} onClick={() => setMobileMenuOpen(false)}>
           <Zap size={32} color="#5ce1e6" />
           <span style={{ fontSize: '28px', fontWeight: '800', letterSpacing: '-1px', background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             CirSimAI
@@ -65,7 +67,7 @@ export default function Header() {
         </Link>
 
         {/* Desktop Nav */}
-        <nav style={{ display: 'flex', gap: '32px' }}>
+        <nav className="mobile-hidden" style={{ display: 'flex', gap: '32px' }}>
           <Link to="/enterprise" style={{ color: '#e2e8f0', textDecoration: 'none', fontSize: '16px', fontWeight: '500', transition: 'color 0.2s' }}>Enterprise</Link>
 
           <div
@@ -111,101 +113,160 @@ export default function Header() {
 
         {/* Right side — shows either Sign In / Try Simulator (guest) OR user avatar (logged in) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {user ? (
-            /* ── Logged-in: avatar + dropdown ── */
-            <div ref={userMenuRef} style={{ position: 'relative' }}>
-              <button
-                onClick={() => setUserMenuOpen(p => !p)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '10px',
-                  background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '30px', padding: '6px 14px 6px 6px',
-                  cursor: 'pointer', color: '#fff', fontFamily: 'Inter, sans-serif',
-                  transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-              >
-                {/* Avatar circle with initials */}
-                <div style={{
-                  width: '32px', height: '32px', borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #c2a8f7, #5ce1e6)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '13px', fontWeight: '700', color: '#000', flexShrink: 0
-                }}>
-                  {getInitials()}
-                </div>
-                <span style={{ fontSize: '14px', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {user.user_metadata?.full_name || user.email.split('@')[0]}
-                </span>
-                <ChevronDown size={14} color="#94a3b8" />
-              </button>
+          <div className="mobile-hidden" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {user ? (
+              /* ── Logged-in: avatar + dropdown ── */
+              <div ref={userMenuRef} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setUserMenuOpen(p => !p)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '30px', padding: '6px 14px 6px 6px',
+                    cursor: 'pointer', color: '#fff', fontFamily: 'Inter, sans-serif',
+                    transition: 'background 0.2s',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
+                >
+                  {/* Avatar circle with initials */}
+                  <div style={{
+                    width: '32px', height: '32px', borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #c2a8f7, #5ce1e6)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '13px', fontWeight: '700', color: '#000', flexShrink: 0
+                  }}>
+                    {getInitials()}
+                  </div>
+                  <span style={{ fontSize: '14px', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {user.user_metadata?.full_name || user.email.split('@')[0]}
+                  </span>
+                  <ChevronDown size={14} color="#94a3b8" />
+                </button>
 
-              <AnimatePresence>
-                {userMenuOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    style={{
-                      position: 'absolute', top: 'calc(100% + 8px)', right: 0,
-                      background: 'rgba(15, 23, 42, 0.97)', border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '12px', padding: '8px', minWidth: '200px',
-                      backdropFilter: 'blur(12px)', boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
-                    }}
-                  >
-                    {/* User info row */}
-                    <div style={{ padding: '10px 12px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: '6px' }}>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>
-                        {user.user_metadata?.full_name || 'Account'}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{user.email}</div>
-                    </div>
-
-                    <Link to="/simulator" onClick={() => setUserMenuOpen(false)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', color: '#e2e8f0', textDecoration: 'none', borderRadius: '8px', fontSize: '14px' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(92,225,230,0.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <User size={15} /> Open Simulator
-                    </Link>
-
-                    <button onClick={handleSignOut}
+                <AnimatePresence>
+                  {userMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
                       style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        width: '100%', padding: '10px 12px', border: 'none', borderRadius: '8px',
-                        background: 'transparent', color: '#fca5a5', cursor: 'pointer',
-                        fontSize: '14px', fontFamily: 'Inter, sans-serif', textAlign: 'left',
-                        transition: 'background 0.15s',
+                        position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                        background: 'rgba(15, 23, 42, 0.97)', border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '12px', padding: '8px', minWidth: '200px',
+                        backdropFilter: 'blur(12px)', boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,80,80,0.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <LogOut size={15} /> Sign Out
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          ) : (
-            /* ── Guest: Sign In + Try Simulator ── */
-            <>
-              <Link to="/auth" style={{ color: '#fff', textDecoration: 'none', fontSize: '16px', fontWeight: '600' }}>Log in</Link>
-              <Link to="/auth" style={{
-                background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', color: '#000',
-                textDecoration: 'none', padding: '10px 20px', borderRadius: '24px',
-                fontSize: '16px', fontWeight: '700', transition: 'transform 0.2s',
-                boxShadow: '0 4px 12px rgba(92, 225, 230, 0.4)'
-              }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                Try Simulator
-              </Link>
-            </>
-          )}
+                      {/* User info row */}
+                      <div style={{ padding: '10px 12px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: '6px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: '600', color: '#e2e8f0' }}>
+                          {user.user_metadata?.full_name || 'Account'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{user.email}</div>
+                      </div>
+
+                      <Link to="/simulator" onClick={() => setUserMenuOpen(false)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', color: '#e2e8f0', textDecoration: 'none', borderRadius: '8px', fontSize: '14px' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(92,225,230,0.1)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <User size={15} /> Open Simulator
+                      </Link>
+
+                      <button onClick={handleSignOut}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '10px',
+                          width: '100%', padding: '10px 12px', border: 'none', borderRadius: '8px',
+                          background: 'transparent', color: '#fca5a5', cursor: 'pointer',
+                          fontSize: '14px', fontFamily: 'Inter, sans-serif', textAlign: 'left',
+                          transition: 'background 0.15s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,80,80,0.1)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <LogOut size={15} /> Sign Out
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ) : (
+              /* ── Guest: Sign In + Try Simulator ── */
+              <>
+                <Link to="/auth" style={{ color: '#fff', textDecoration: 'none', fontSize: '16px', fontWeight: '600' }}>Log in</Link>
+                <Link to="/auth" style={{
+                  background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', color: '#000',
+                  textDecoration: 'none', padding: '10px 20px', borderRadius: '24px',
+                  fontSize: '16px', fontWeight: '700', transition: 'transform 0.2s',
+                  boxShadow: '0 4px 12px rgba(92, 225, 230, 0.4)'
+                }}
+                  onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  Try Simulator
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Mobile Menu Toggle */}
+          <button
+            className="mobile-show"
+            style={{ display: 'none', background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px' }}
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
+            {mobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
+          </button>
         </div>
       </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{
+              background: 'rgba(2, 6, 23, 0.92)', borderTop: '1px solid rgba(255,255,255,0.05)',
+              overflow: 'hidden', paddingBottom: '24px', backdropFilter: 'blur(20px)'
+            }}
+          >
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <Link to="/enterprise" style={{ color: '#fff', textDecoration: 'none', fontSize: '18px', fontWeight: '600' }} onClick={() => setMobileMenuOpen(false)}>Enterprise</Link>
+              <div style={{ color: '#fff', fontSize: '18px', fontWeight: '600' }}>Our Services</div>
+              <div style={{ paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <Link to="/simulator" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '16px' }} onClick={() => setMobileMenuOpen(false)}>Circuit Simulator</Link>
+                <Link to="/embedded" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: '16px' }} onClick={() => setMobileMenuOpen(false)}>Embedded Simulator</Link>
+              </div>
+              <Link to="/pricing" style={{ color: '#fff', textDecoration: 'none', fontSize: '18px', fontWeight: '600' }} onClick={() => setMobileMenuOpen(false)}>Pricing</Link>
+              <Link to="/contact" style={{ color: '#fff', textDecoration: 'none', fontSize: '18px', fontWeight: '600' }} onClick={() => setMobileMenuOpen(false)}>Contact Us</Link>
+
+              <div style={{ marginTop: '12px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {user ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #c2a8f7, #5ce1e6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', fontWeight: '700', color: '#000' }}>
+                        {getInitials()}
+                      </div>
+                      <div>
+                        <div style={{ color: '#fff', fontWeight: '600' }}>{user.user_metadata?.full_name || user.email.split('@')[0]}</div>
+                        <div style={{ color: '#64748b', fontSize: '14px' }}>{user.email}</div>
+                      </div>
+                    </div>
+                    <button onClick={handleSignOut} style={{ background: 'rgba(255,80,80,0.1)', color: '#fca5a5', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '600', textAlign: 'center' }}>Sign Out</button>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/auth" style={{ color: '#fff', textDecoration: 'none', textAlign: 'center', padding: '12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px' }} onClick={() => setMobileMenuOpen(false)}>Log in</Link>
+                    <Link to="/auth" style={{ background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', color: '#000', textDecoration: 'none', textAlign: 'center', padding: '12px', borderRadius: '24px', fontWeight: '700' }} onClick={() => setMobileMenuOpen(false)}>Try Simulator</Link>
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.header>
   );
 }
