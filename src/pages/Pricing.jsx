@@ -40,17 +40,17 @@ export default function Pricing() {
     <div style={{ minHeight: '100vh', background: '#020617', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       <Header />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundImage: `url(${circuitBg})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.15, zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'relative', zIndex: 1, paddingTop: '120px', maxWidth: '1200px', margin: '0 auto', textAlign: 'center', padding: '120px 24px 80px' }}>
+      <div className="mobile-padding" style={{ position: 'relative', zIndex: 1, paddingTop: '120px', maxWidth: '1200px', margin: '0 auto', textAlign: 'center', padding: '120px 24px 80px' }}>
         
-        <h1 style={{ fontSize: '48px', fontWeight: '800', marginBottom: '16px' }}>
+        <h1 className="mobile-title" style={{ fontSize: '48px', fontWeight: '800', marginBottom: '16px' }}>
           Plans that evolve with your projects.
         </h1>
-        <h2 style={{ fontSize: '40px', fontWeight: '800', marginBottom: '60px', color: '#e2e8f0' }}>
+        <h2 className="mobile-subtitle" style={{ fontSize: '40px', fontWeight: '800', marginBottom: '60px', color: '#e2e8f0' }}>
           Try with your <span style={{ background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>team</span> for free.
         </h2>
 
         {/* 3 Pricing Cards */}
-        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '80px' }}>
+        <div className="mobile-flex-col" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '80px' }}>
             
             {/* Free tier */}
             <div style={getCardStyle(false)}>
@@ -135,9 +135,9 @@ export default function Pricing() {
         </div>
 
         {/* Feature Comparison Table — unchanged */}
-        <h3 style={{ fontSize: '32px', fontWeight: '700', marginBottom: '24px', textAlign: 'left' }}>Compare Features</h3>
-        <div style={{ background: 'rgba(15, 23, 42, 0.7)', borderRadius: '16px', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <h3 className="mobile-title" style={{ fontSize: '32px', fontWeight: '700', marginBottom: '24px', textAlign: 'left' }}>Compare Features</h3>
+        <div className="mobile-table-wrapper" style={{ background: 'rgba(15, 23, 42, 0.7)', borderRadius: '16px', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.05)', overflowX: 'auto' }}>
+            <table className="mobile-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
                     <tr>
                         <th style={thStyle}>Core capabilities</th>

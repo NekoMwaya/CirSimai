@@ -91,17 +91,18 @@ export default function LandingPage() {
       </section>
 
       {/* Vision Section */}
-      <section style={{ padding: '120px 24px', background: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 2 }}>
+      <section className="mobile-padding" style={{ padding: '120px 24px', background: '#0f172a', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 2 }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <motion.div
             initial={{ opacity: 0, y: 50 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.8 }}
+            className="mobile-grid"
             style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '64px', alignItems: 'center' }}
           >
             <div>
-              <h2 style={{ fontSize: '40px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-1px' }}>Our Vision</h2>
+              <h2 className="mobile-title" style={{ fontSize: '40px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-1px' }}>Our Vision</h2>
               <p style={{ fontSize: '18px', color: '#94a3b8', lineHeight: '1.7', marginBottom: '24px' }}>
                 Founded by Tan Kang and Lee Ken Hyi, Undergraduates at Xiamen University Malaysia studying Robotics and Automation Engineering.
               </p>
@@ -125,11 +126,11 @@ export default function LandingPage() {
       </section>
 
       {/* 1. The Demo Section (Actual Video) */}
-      <section style={{ padding: '50px 24px', position: 'relative', zIndex: 2 }}>
+      <section className="mobile-padding" style={{ padding: '50px 24px', position: 'relative', zIndex: 2 }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-            <h2 style={{ fontSize: '48px', fontWeight: '800', marginBottom: '16px' }}>Experience the Performance</h2>
-            <p style={{ color: '#94a3b8', fontSize: '20px' }}>Real-time hardware simulation at your fingertips.</p>
+            <h2 className="mobile-title" style={{ fontSize: '48px', fontWeight: '800', marginBottom: '16px' }}>Experience the Performance</h2>
+            <p className="mobile-text" style={{ color: '#94a3b8', fontSize: '20px' }}>Real-time hardware simulation at your fingertips.</p>
           </div>
           <DemoBrowser
             videoSrc="/videos/0428.mp4"
@@ -139,9 +140,9 @@ export default function LandingPage() {
       </section>
 
       {/* 2. The Features Grid (Spotlight Cards) */}
-      <section style={{ padding: '150px 24px', position: 'relative', zIndex: 2 }}>
+      <section className="mobile-padding" style={{ padding: '150px 24px', position: 'relative', zIndex: 2 }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '32px' }}>
+          <div className="mobile-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 350px), 1fr))', gap: '32px' }}>
             <FeatureCard
               title="Intelligent AI CS"
               description="Seamlessly bridge the gap between text prompts and circuit netlists with our specialized LLM fine-tuning."
@@ -181,14 +182,14 @@ export default function LandingPage() {
       </section>
 
       {/* 3. The Globe Section */}
-      <section style={{ padding: '160px 24px', background: '#020617', position: 'relative', zIndex: 5, overflow: 'visible' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative' }}>
-          <div style={{ maxWidth: '600px', position: 'relative', zIndex: 2 }}>
-            <h2 style={{ fontSize: '56px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-2px' }}>Global Infrastructure</h2>
-            <p style={{ fontSize: '20px', color: '#94a3b8', lineHeight: '1.7', marginBottom: '32px' }}>
+      <section className="mobile-padding-lg" style={{ padding: '160px 24px', background: '#020617', position: 'relative', zIndex: 5, overflow: 'visible' }}>
+        <div className="mobile-flex-col" style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative', display: 'flex' }}>
+          <div className="mobile-center-text" style={{ maxWidth: '600px', position: 'relative', zIndex: 2, flex: 1 }}>
+            <h2 className="mobile-title" style={{ fontSize: '56px', fontWeight: '800', marginBottom: '24px', letterSpacing: '-2px' }}>Global Infrastructure</h2>
+            <p className="mobile-text" style={{ fontSize: '20px', color: '#94a3b8', lineHeight: '1.7', marginBottom: '32px' }}>
               Our simulation engine is distributed across global edge nodes, ensuring low latency for hardware engineers from Surabaya to Malaysia and beyond.
             </p>
-            <div style={{ display: 'flex', gap: '16px' }}>
+            <div className="mobile-flex-col" style={{ display: 'flex', gap: '16px', justifyContent: 'flex-start' }}>
               <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(10px)' }}>
                 <div style={{ color: '#5ce1e6', fontWeight: '700', fontSize: '24px' }}>99.9%</div>
                 <div style={{ color: '#64748b', fontSize: '14px' }}>Uptime</div>
@@ -201,7 +202,7 @@ export default function LandingPage() {
           </div>
 
           {/* Large Globe positioned behind the text */}
-          <div style={{
+          <div className="mobile-globe" style={{
             position: 'absolute',
             top: '60%',
             right: '-25%',

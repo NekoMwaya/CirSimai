@@ -34,18 +34,21 @@ function getAlternateModel(model) {
   return model === 'gemma-4-26b-a4b-it' ? 'gemma-4-31b-it' : 'gemma-4-26b-a4b-it'
 }
 
-function isRateLimitError(error) {
+function shouldAttemptFallback(error) {
   const status = Number(error?.status || error?.statusCode || 0)
   const code = String(error?.code || '').toLowerCase()
   const message = String(error?.message || '').toLowerCase()
 
   return (
     status === 429 ||
+    status === 500 || // Include Internal Server Error for fallback
     code.includes('resource_exhausted') ||
     code.includes('rate') ||
+    code.includes('internal') ||
     message.includes('rate limit') ||
     message.includes('resource_exhausted') ||
-    message.includes('quota')
+    message.includes('quota') ||
+    message.includes('internal error')
   )
 }
 
@@ -239,23 +242,9 @@ function accumulateChunkDelta(nextText, previousText) {
 }
 
 function buildGenerationConfig(includeThinking, model = '') {
-  const baseConfig = {
-    maxOutputTokens: 16384
-  }
-
-  // Only gemma-4-31b doesn't support thinkingLevel parameter
-  const supportsThinking = !model.includes('gemma')
-
-  if (!includeThinking || !supportsThinking) {
-    return baseConfig
-  }
-
+  // Gemma 4 models natively output thinking, passing thinkingConfig causes 500 errors.
   return {
-    ...baseConfig,
-    thinkingConfig: {
-      includeThoughts: true,
-      thinkingLevel: 'medium'
-    }
+    maxOutputTokens: 8192
   }
 }
 
@@ -273,9 +262,11 @@ async function generateWithFallback({ ai, primaryModel, fallbackModel, requestBo
       ...requestBody
     })
   } catch (primaryError) {
-    if (!isRateLimitError(primaryError)) {
+    if (!shouldAttemptFallback(primaryError)) {
       throw primaryError
     }
+
+    console.warn(`[AI] Primary model ${primaryModel} failed, falling back to ${fallbackModel}. Error:`, primaryError.message)
 
     response = await ai.models.generateContent({
       model: fallbackModel,
@@ -297,9 +288,11 @@ async function generateStreamWithFallback({ ai, primaryModel, fallbackModel, req
       ...requestBody
     })
   } catch (primaryError) {
-    if (!isRateLimitError(primaryError)) {
+    if (!shouldAttemptFallback(primaryError)) {
       throw primaryError
     }
+
+    console.warn(`[AI] Primary model stream ${primaryModel} failed, falling back to ${fallbackModel}. Error:`, primaryError.message)
 
     stream = await ai.models.generateContentStream({
       model: fallbackModel,
@@ -442,7 +435,7 @@ export default async function handler(req, res) {
     const body = req.body || {}
 
     const message = String(body.message || '').trim()
-    const model = String(body.model || 'gemma-4-26b-a4b-it')
+    const model = String(body.model || 'gemma-4-31b-it')
     const rawMode = body.mode
     const mode = typeof rawMode === 'string' ? rawMode.toLowerCase() : ''
     const circuitNetlist = String(body.circuitNetlist || '')

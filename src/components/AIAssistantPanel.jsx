@@ -11,8 +11,8 @@ import { netlistToDraftSchematic } from '../utils/aiNetlistLayout';
 import { supabase } from '../supabaseClient';
 
 const MODELS = [
-    { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 (26b)', icon: '✦' },
-    { id: 'gemma-4-31b-it',     label: 'Gemma 4 (31b)', icon: '✦' }
+    { id: 'gemma-4-31b-it',     label: 'Gemma 4 (31b)', icon: '✦' },
+    { id: 'gemma-4-26b-a4b-it', label: 'Gemma 4 (26b)', icon: '✦' }
 ];
 
 const INITIAL_MESSAGE = {

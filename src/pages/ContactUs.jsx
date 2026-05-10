@@ -100,7 +100,7 @@ export default function ContactUs() {
     <div style={{ minHeight: '100vh', background: '#020617', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       <Header />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundImage: `url(${circuitBg})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.15, zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'relative', zIndex: 1, maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: '60px', padding: '150px 24px 80px' }}>
+      <div className="mobile-padding mobile-flex-col" style={{ position: 'relative', zIndex: 1, maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: '60px', padding: '150px 24px 80px' }}>
           
         {/* Left Column */}
         <div style={{ flex: '1', minWidth: '300px' }}>
@@ -146,7 +146,7 @@ export default function ContactUs() {
         </div>
 
         {/* Right Column — Contact Form powered by Formspree */}
-        <div style={{ flex: '1', minWidth: '400px', background: '#0f172a', padding: '40px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="mobile-card mobile-padding" style={{ flex: '1', minWidth: '400px', background: '#0f172a', padding: '40px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
 
           {/* Success state */}
           {status === 'success' ? (
@@ -166,7 +166,7 @@ export default function ContactUs() {
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div className="mobile-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                   <div>
                       <label style={labelStyle}>First Name</label>
                       <input style={inputStyle} placeholder="John" value={formState.firstName} onChange={handleChange('firstName')} onFocus={focusStyle} onBlur={blurStyle} required />
@@ -177,7 +177,7 @@ export default function ContactUs() {
                   </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div className="mobile-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                   <div>
                       <label style={labelStyle}>Phone</label>
                       <input style={inputStyle} placeholder="+1234567890" value={formState.phone} onChange={handleChange('phone')} onFocus={focusStyle} onBlur={blurStyle} />
@@ -188,7 +188,7 @@ export default function ContactUs() {
                   </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div className="mobile-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                   <div>
                       <label style={labelStyle}>Company</label>
                       <input style={inputStyle} placeholder="Acme Corp" value={formState.company} onChange={handleChange('company')} onFocus={focusStyle} onBlur={blurStyle} />

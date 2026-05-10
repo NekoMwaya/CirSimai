@@ -8,8 +8,8 @@ export default function Enterprise() {
     <div style={{ minHeight: '100vh', background: '#020617', color: '#fff', fontFamily: 'Inter, sans-serif' }}>
       <Header />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundImage: `url(${circuitBg})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.15, zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'relative', zIndex: 1, paddingTop: '150px', maxWidth: '1200px', margin: '0 auto', textAlign: 'center', padding: '150px 24px 80px' }}>
-        <h1 style={{ fontSize: 'Clamp(40px, 6vw, 64px)', fontWeight: '800', marginBottom: '24px', lineHeight: 1.1 }}>
+      <div className="mobile-padding" style={{ position: 'relative', zIndex: 1, paddingTop: '150px', maxWidth: '1200px', margin: '0 auto', textAlign: 'center', padding: '150px 24px 80px' }}>
+        <h1 className="mobile-title" style={{ fontSize: 'Clamp(40px, 6vw, 64px)', fontWeight: '800', marginBottom: '24px', lineHeight: 1.1 }}>
           <span style={{ 
             background: 'linear-gradient(90deg, #c2a8f7, #5ce1e6)', 
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
@@ -19,7 +19,7 @@ export default function Enterprise() {
           </span> with advanced spatial<br/> and hardware automation
         </h1>
         
-        <p style={{ fontSize: '20px', color: '#94a3b8', lineHeight: '1.6', marginBottom: '40px', maxWidth: '800px', margin: '0 auto 40px auto' }}>
+        <p className="mobile-text" style={{ fontSize: '20px', color: '#94a3b8', lineHeight: '1.6', marginBottom: '40px', maxWidth: '800px', margin: '0 auto 40px auto' }}>
           The #1 choice for global engineering teams to launch faster, scale smarter, and drive ROI across circuit design, embedded deployment, and architectural review.
         </p>
 
@@ -55,7 +55,7 @@ export default function Enterprise() {
 
         {/* Abstract UI representation */}
         <div style={{ marginTop: '80px', display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
-            <div style={{ background: '#0f172a', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: '300px', textAlign: 'left' }}>
+            <div className="mobile-card" style={{ background: '#0f172a', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: '300px', textAlign: 'left' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                     <div style={{ background: 'linear-gradient(135deg, #c2a8f7, #5ce1e6)', borderRadius: '50%', padding: '8px', color: '#000' }}><Zap size={20} /></div>
                     <span style={{ fontWeight: '600' }}>New Topology Detected</span>
@@ -67,7 +67,7 @@ export default function Enterprise() {
                 <button style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer' }}>REVIEW</button>
             </div>
 
-            <div style={{ background: '#0f172a', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: '300px', textAlign: 'left', display: 'flex', flexDirection: 'column' }}>
+            <div className="mobile-card" style={{ background: '#0f172a', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', width: '300px', textAlign: 'left', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ background: '#1e293b', borderTop: '4px solid #c2a8f7', borderRadius: '8px', padding: '16px', flex: 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                         <Mail color="#a8b2c1" />
