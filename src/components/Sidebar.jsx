@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useCircuit } from '../context/CircuitContext';
+import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play } from 'lucide-react';
+import { Play, Save, FolderOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const Category = ({ title, children, theme, defaultOpen = false }) => {
@@ -64,6 +65,60 @@ const Category = ({ title, children, theme, defaultOpen = false }) => {
     );
 };
 
+// Inline Save-As modal
+const SaveModal = ({ theme, onSave, onClose, defaultName }) => {
+    const [name, setName] = useState(defaultName || '');
+    return (
+        <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }} onClick={onClose}>
+            <div
+                onClick={e => e.stopPropagation()}
+                style={{
+                    background: '#1a1a2e', border: '1px solid rgba(92,225,230,0.3)',
+                    borderRadius: 16, padding: 28, minWidth: 340,
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+                }}
+            >
+                <h3 style={{ margin: '0 0 16px 0', color: '#fff', fontSize: 18, fontWeight: 700 }}>
+                    💾 Save Project As
+                </h3>
+                <input
+                    autoFocus
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onSave(name.trim()); }}
+                    placeholder="Enter project name..."
+                    style={{
+                        width: '100%', padding: '10px 14px', borderRadius: 8,
+                        border: '1px solid rgba(92,225,230,0.3)', background: '#0f1115',
+                        color: '#fff', outline: 'none', fontSize: 14, boxSizing: 'border-box',
+                        marginBottom: 16,
+                    }}
+                />
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button onClick={onClose} style={{
+                        padding: '8px 18px', borderRadius: 8, border: '1px solid #333',
+                        background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 13
+                    }}>Cancel</button>
+                    <button
+                        disabled={!name.trim()}
+                        onClick={() => name.trim() && onSave(name.trim())}
+                        style={{
+                            padding: '8px 18px', borderRadius: 8, border: 'none',
+                            background: name.trim() ? 'linear-gradient(90deg,#c2a8f7,#5ce1e6)' : '#333',
+                            color: name.trim() ? '#000' : '#666',
+                            cursor: name.trim() ? 'pointer' : 'not-allowed',
+                            fontWeight: 700, fontSize: 13
+                        }}
+                    >Save</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunSimulation }) {
     const { 
         tool, setTool, 
@@ -71,8 +126,18 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
         theme,
         spawnComponent,
         isColumnRowSnapEnabled,
-        setIsColumnRowSnapEnabled
+        setIsColumnRowSnapEnabled,
+        projectId,
+        projectName,
+        setProjectName,
+        saveProject,
     } = useCircuit();
+
+    const { user } = useAuth();
+
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState(null); // 'success' | 'error' | null
+    const [showSaveModal, setShowSaveModal] = useState(false);
 
     const gradientBg = isDarkMode ? 'linear-gradient(90deg, #4a007d, #004e92, #004989)' : 'linear-gradient(90deg, #c2a8f7, #5ce1e6)';
     const gradientBorder = isDarkMode ? 'linear-gradient(180deg, #4a007d, #004e92, #004989)' : 'linear-gradient(180deg, #c2a8f7, #5ce1e6)';
@@ -121,7 +186,57 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
         </motion.button>
     );
 
+    const handleSave = async () => {
+        if (!user) return;
+        if (!projectId) {
+            // No existing project, open Save As modal
+            setShowSaveModal(true);
+            return;
+        }
+        setIsSaving(true);
+        setSaveStatus(null);
+        try {
+            await saveProject(user.id);
+            setSaveStatus('success');
+            setTimeout(() => setSaveStatus(null), 2000);
+        } catch (err) {
+            console.error('Save error:', err);
+            setSaveStatus('error');
+            setTimeout(() => setSaveStatus(null), 3000);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSaveAs = async (name) => {
+        if (!user) return;
+        setShowSaveModal(false);
+        setIsSaving(true);
+        setSaveStatus(null);
+        try {
+            await saveProject(user.id, name);
+            setProjectName(name);
+            setSaveStatus('success');
+            setTimeout(() => setSaveStatus(null), 2000);
+        } catch (err) {
+            console.error('Save As error:', err?.message || err?.code || err);
+            setSaveStatus('error');
+            setTimeout(() => setSaveStatus(null), 3000);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return (
+        <>
+        {showSaveModal && (
+            <SaveModal
+                theme={theme}
+                defaultName={projectName}
+                onSave={handleSaveAs}
+                onClose={() => setShowSaveModal(false)}
+            />
+        )}
         <div style={{ 
             position: 'absolute', top: 0, left: 0, bottom: 0, zIndex: 10, 
             background: isDarkMode ? '#121212' : '#ffffff', 
@@ -139,12 +254,62 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
                   <Link to="/" style={{ textDecoration: 'none' }}>
                     <strong style={{fontSize: 20, background: textGradientBg, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px'}}>CirSimAI</strong>
                   </Link>
+                  {projectName && (
+                    <span style={{ fontSize: 10, color: '#5ce1e6', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
+                      {projectName}
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => setIsDarkMode(!isDarkMode)} style={{background:'transparent', border:'none', cursor:'pointer', fontSize: 16, padding: '4px', borderRadius: '50%'}}>
                     {isDarkMode ? '☀️' : '🌙'}
                 </button>
             </div>
             
+            {/* Save Buttons */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={handleSave}
+                    disabled={isSaving || !user}
+                    style={{
+                        flex: 1, padding: '7px 8px',
+                        background: saveStatus === 'success' ? '#22c55e' : saveStatus === 'error' ? '#ef4444' : '#1e3a5f',
+                        color: '#fff', border: '1px solid rgba(92,225,230,0.2)',
+                        borderRadius: 7, cursor: user ? 'pointer' : 'not-allowed',
+                        fontWeight: 600, fontSize: 11,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                        opacity: isSaving ? 0.7 : 1,
+                    }}
+                >
+                    <Save size={12} />
+                    {isSaving ? '...' : saveStatus === 'success' ? 'Saved!' : saveStatus === 'error' ? 'Error' : 'Save'}
+                </motion.button>
+                <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setShowSaveModal(true)}
+                    disabled={isSaving || !user}
+                    style={{
+                        flex: 1, padding: '7px 8px',
+                        background: '#1e293b',
+                        color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: 7, cursor: user ? 'pointer' : 'not-allowed',
+                        fontWeight: 600, fontSize: 11,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    }}
+                >
+                    <FolderOpen size={12} />
+                    Save As
+                </motion.button>
+            </div>
+
+            {!user && (
+                <div style={{ fontSize: 10, color: '#f59e0b', textAlign: 'center', padding: '4px 0', opacity: 0.8 }}>
+                    Sign in to save projects
+                </div>
+            )}
+
             <motion.button 
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -225,5 +390,6 @@ export default function Sidebar({ onToggleAIAssistant, isAIAssistantOpen, onRunS
                 Shortcuts: R=Rotate, F=Flip
             </div>
         </div>
+        </>
     );
 }

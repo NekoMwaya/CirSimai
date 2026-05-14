@@ -22,6 +22,14 @@ export default function PropertiesPanel() {
     // Find the single selected component
     const selectedComponent = components.find(c => selectedIds.length === 1 && c.id === selectedIds[0]);
 
+    // ⚠️ All hooks MUST be called before any early return (Rules of Hooks)
+    const [labelValue, setLabelValue] = useState(selectedComponent?.label || '');
+
+    useEffect(() => {
+        setLabelValue(selectedComponent?.label || '');
+    }, [selectedComponent?.label]);
+
+    // If no component is selected, render nothing
     if (!selectedComponent) return null;
 
     // Determine unit label based on component type
@@ -76,12 +84,6 @@ export default function PropertiesPanel() {
     const isJfet = selectedComponent.type === 'njfet' || selectedComponent.type === 'pjfet';
     const isOpamp = selectedComponent.type === 'opamp' || selectedComponent.type === 'opamp5';
     const isTransistor = isBjt || isMosfet || isJfet;
-
-    const [labelValue, setLabelValue] = useState(selectedComponent.label || '');
-
-    useEffect(() => {
-        setLabelValue(selectedComponent.label || '');
-    }, [selectedComponent.label]);
 
     const commitLabel = () => {
         let newLabel = String(labelValue || '').trim();

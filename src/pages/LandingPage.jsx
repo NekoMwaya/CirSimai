@@ -69,7 +69,7 @@ export default function LandingPage() {
             className="mobile-h2"
             style={{ fontSize: 'Clamp(20px, 3vw, 28px)', fontWeight: '400', color: '#94a3b8', marginBottom: '48px', maxWidth: '800px', margin: '0 auto 48px auto' }}
           >
-            The World's First AI-Powered circuit simulator.
+            The World's First AI-Powered Embedded System & Circuit simulator.
           </motion.h2>
 
           <motion.div

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { snap, getPins } from '../utils/math';
 import { snapCanvasToLayoutGrid } from '../utils/aiLayoutGrid';
+import { supabase } from '../supabaseClient';
 
 const CircuitContext = createContext();
 
@@ -20,6 +21,11 @@ export const CircuitProvider = ({ children }) => {
   // --- HISTORY STATE ---
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
+
+  // --- PROJECT STATE ---
+  const [projectId, setProjectId] = useState(null);
+  const [projectName, setProjectName] = useState('Untitled Circuit');
+  const [projectType] = useState('circuit'); // always 'circuit' for this context
 
   // --- THEME ---
   const theme = useMemo(() => isDarkMode ? {
@@ -180,6 +186,54 @@ export const CircuitProvider = ({ children }) => {
     setSelectedIds([id]);
   };
 
+  // --- SAVE PROJECT ---
+  const saveProject = useCallback(async (userId, nameOverride = null) => {
+    const name = nameOverride || projectName;
+
+    const payload = {
+      user_id: userId,
+      name,
+      components,
+      wires,
+      is_public: false,
+      project_type: 'circuit',
+    };
+
+    if (projectId && !nameOverride) {
+      // Update existing
+      const { data, error } = await supabase
+        .from('circuit_projects')
+        .update(payload)
+        .eq('id', projectId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    } else {
+      // Insert new (also used for Save As)
+      const { data, error } = await supabase
+        .from('circuit_projects')
+        .insert(payload)
+        .select()
+        .single();
+      if (error) throw error;
+      setProjectId(data.id);
+      setProjectName(data.name);
+      return data;
+    }
+  }, [projectId, projectName, components, wires]);
+
+  // --- LOAD PROJECT ---
+  const loadProject = useCallback((project) => {
+    setComponents(project.components || []);
+    setWires(project.wires || []);
+    setProjectId(project.id);
+    setProjectName(project.name || 'Untitled Circuit');
+    setHistory([]);
+    setFuture([]);
+    setSelectedIds([]);
+  }, []);
+
   return (
     <CircuitContext.Provider value={{
       isDarkMode, setIsDarkMode, theme,
@@ -189,7 +243,9 @@ export const CircuitProvider = ({ children }) => {
       selectedIds, setSelectedIds,
       stagePos, setStagePos, stageScale, setStageScale,
       isColumnRowSnapEnabled, setIsColumnRowSnapEnabled,
-      undo, redo, saveState
+      undo, redo, saveState,
+      projectId, setProjectId, projectName, setProjectName, projectType,
+      saveProject, loadProject,
     }}>
       {children}
     </CircuitContext.Provider>

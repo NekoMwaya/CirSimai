@@ -8,6 +8,7 @@ import PropertiesPanel from '../components/PropertiesPanel';
 import AIAssistantPanel from '../components/AIAssistantPanel';
 import { snap, getRelativePointerPosition, getJunctions, getPins } from '../utils/math';
 import { generateNetlist, buildLayoutAnnotatedNetlist } from '../utils/networkAnalysis';
+import { supabase } from '../supabaseClient';
 
 import { spice } from '../utils/spiceEngine';
 import SimulationOutputOriginal from '../components/SimulationOutput';
@@ -160,8 +161,30 @@ const CircuitEditor = () => {
         isColumnRowSnapEnabled,
         spawnComponent,
         undo, redo,
-        saveState
+        saveState,
+        loadProject,
     } = useCircuit();
+
+    // Load project from ?project=<id> URL param
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const projectIdParam = params.get('project');
+        if (!projectIdParam) return;
+
+        supabase
+            .from('circuit_projects')
+            .select('*')
+            .eq('id', projectIdParam)
+            .maybeSingle()
+            .then(({ data, error }) => {
+                if (error || !data) { console.error('Failed to load project:', error); return; }
+                if (data.project_type !== 'circuit' && data.project_type) return; // wrong type
+                loadProject(data);
+                // Clean up URL
+                window.history.replaceState(null, '', window.location.hash.split('?')[0]);
+            });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const [isDrawingWire, setIsDrawingWire] = useState(false);
     const [wirePoints, setWirePoints] = useState([]);

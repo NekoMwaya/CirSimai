@@ -7,7 +7,9 @@ import { WOKWI_COMPONENT_CATALOG } from '../utils/wokwiComponentCatalog';
 import { buildNetlist } from '../utils/circuitCompilation';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import AIAssistantPanel from '../components/AIAssistantPanel';
-import { Bot, Library, Plus, X } from 'lucide-react';
+import { Bot, Library, Plus, X, Save, FolderOpen } from 'lucide-react';
+import { supabase } from '../supabaseClient';
+import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_SKETCH = `void setup() {
   pinMode(13, OUTPUT);
@@ -41,6 +43,7 @@ const getAbsolutePinPos = (component, pinId, pinsOverride = null) => {
 };
 
 export default function EmbeddedSimulator() {
+  const { user } = useAuth();
   const [code, setCode] = useState(DEFAULT_SKETCH);
   const [isSimulating, setIsSimulating] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
@@ -57,6 +60,44 @@ export default function EmbeddedSimulator() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef(null);
+
+  // Project persistence state
+  const [projectId, setProjectId] = useState(null);
+  const [projectName, setProjectName] = useState('Untitled Embedded Project');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null); // 'success' | 'error' | null
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveModalName, setSaveModalName] = useState('');
+
+  // Load project from ?project=<id> URL param
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const pidParam = params.get('project');
+    if (!pidParam) return;
+
+    supabase
+      .from('circuit_projects')
+      .select('*')
+      .eq('id', pidParam)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) { console.error('Failed to load project:', error); return; }
+        if (data.components) setComponents(data.components);
+        if (data.wires)      setWires(data.wires);
+        // code + libraries were packed into description as JSON
+        if (data.description) {
+          try {
+            const extra = JSON.parse(data.description);
+            if (extra.code)      setCode(extra.code);
+            if (extra.libraries) setLibraries(extra.libraries);
+          } catch { /* description is plain text, ignore */ }
+        }
+        setProjectId(data.id);
+        setProjectName(data.name || 'Untitled Embedded Project');
+        window.history.replaceState(null, '', window.location.hash.split('?')[0]);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLibrarySearch = (query) => {
     setNewLibraryName(query);
@@ -414,6 +455,64 @@ export default function EmbeddedSimulator() {
     }
   };
 
+  // ──────────────────────────── SAVE LOGIC ─────────────────────────────
+  const doSave = async (nameOverride) => {
+    if (!user) return;
+    const name = nameOverride || projectName;
+    // Pack code + libraries into `description` since there's no dedicated column
+    const description = JSON.stringify({ code, libraries });
+    const payload = {
+      user_id: user.id,
+      name,
+      components,
+      wires,
+      description,
+      is_public: false,
+      project_type: 'embedded',
+    };
+
+    if (projectId && !nameOverride) {
+      // Update existing project in-place
+      const { data, error } = await supabase
+        .from('circuit_projects')
+        .update(payload)
+        .eq('id', projectId)
+        .select().single();
+      if (error) throw error;
+      return data;
+    } else {
+      // Insert as a brand-new project (always for Save As)
+      const { data, error } = await supabase
+        .from('circuit_projects')
+        .insert(payload)
+        .select().single();
+      if (error) throw error;
+      setProjectId(data.id);
+      setProjectName(data.name);
+      return data;
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    if (!projectId) { setShowSaveModal(true); setSaveModalName(projectName); return; }
+    setIsSaving(true); setSaveStatus(null);
+    try { await doSave(); setSaveStatus('success'); setTimeout(() => setSaveStatus(null), 2000); }
+    catch (err) { console.error(err); setSaveStatus('error'); setTimeout(() => setSaveStatus(null), 3000); }
+    finally { setIsSaving(false); }
+  };
+
+  const handleSaveAs = async () => {
+    if (!saveModalName.trim() || !user) return;
+    setShowSaveModal(false); setIsSaving(true); setSaveStatus(null);
+    try {
+      await doSave(saveModalName.trim());
+      setProjectName(saveModalName.trim());
+      setSaveStatus('success'); setTimeout(() => setSaveStatus(null), 2000);
+    } catch (err) { console.error('Save As error:', err?.message || err?.code || err); setSaveStatus('error'); setTimeout(() => setSaveStatus(null), 3000); }
+    finally { setIsSaving(false); }
+  };
+
   const filteredPalette = WOKWI_COMPONENT_CATALOG.filter((component) => {
     const search = componentSearch.trim().toLowerCase();
     if (!search) return true;
@@ -423,13 +522,88 @@ export default function EmbeddedSimulator() {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#0a0a0a', color: 'white' }}>
       
+      {/* Save As Modal */}
+      {showSaveModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }} onClick={() => setShowSaveModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#1a1a2e', border: '1px solid rgba(92,225,230,0.3)',
+            borderRadius: 16, padding: 28, minWidth: 340,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+          }}>
+            <h3 style={{ margin: '0 0 16px 0', color: '#fff', fontSize: 18, fontWeight: 700 }}>💾 Save Project As</h3>
+            <input
+              autoFocus
+              value={saveModalName}
+              onChange={e => setSaveModalName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSaveAs(); }}
+              placeholder="Enter project name..."
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                border: '1px solid rgba(92,225,230,0.3)', background: '#0f1115',
+                color: '#fff', outline: 'none', fontSize: 14, boxSizing: 'border-box', marginBottom: 16
+              }}
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowSaveModal(false)} style={{
+                padding: '8px 18px', borderRadius: 8, border: '1px solid #333',
+                background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 13
+              }}>Cancel</button>
+              <button
+                disabled={!saveModalName.trim()}
+                onClick={handleSaveAs}
+                style={{
+                  padding: '8px 18px', borderRadius: 8, border: 'none',
+                  background: saveModalName.trim() ? 'linear-gradient(90deg,#c2a8f7,#5ce1e6)' : '#333',
+                  color: saveModalName.trim() ? '#000' : '#666',
+                  cursor: saveModalName.trim() ? 'pointer' : 'not-allowed',
+                  fontWeight: 700, fontSize: 13
+                }}
+              >Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ padding: '15px 20px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', margin: 0, fontWeight: 'bold' }}>Embedded Simulator</h1>
-          <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.85rem' }}>Dynamic Wiring & Cloud Compiler</p>
+          <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '0.85rem' }}>
+            {projectName}
+            {saveStatus === 'success' && <span style={{ color: '#22c55e', marginLeft: 8 }}>✓ Saved</span>}
+            {saveStatus === 'error' && <span style={{ color: '#ef4444', marginLeft: 8 }}>⚠ Save failed</span>}
+          </p>
         </div>
         
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {/* Save buttons */}
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !user}
+            style={{
+              padding: '8px 16px', background: '#1e3a5f',
+              color: 'white', border: '1px solid rgba(92,225,230,0.2)',
+              borderRadius: '6px', cursor: user ? 'pointer' : 'not-allowed',
+              fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
+              opacity: isSaving ? 0.7 : 1,
+            }}
+          >
+            <Save size={14} /> {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            onClick={() => { setSaveModalName(projectName); setShowSaveModal(true); }}
+            disabled={isSaving || !user}
+            style={{
+              padding: '8px 16px', background: '#1a1a2e',
+              color: '#94a3b8', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '6px', cursor: user ? 'pointer' : 'not-allowed',
+              fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px',
+            }}
+          >
+            <FolderOpen size={14} /> Save As
+          </button>
           <button 
             onClick={compileAndRun}
             disabled={isCompiling}

@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { useCircuit } from '../context/CircuitContext';
+import { useAuth } from '../context/AuthContext';
 import { spice } from '../utils/spiceEngine';
 import { netlistToDraftSchematic } from '../utils/aiNetlistLayout';
 import { supabase } from '../supabaseClient';
@@ -327,6 +328,7 @@ function ControlBar({ model, setModel, mode, setMode, useThinking, setUseThinkin
 
 export default function AIAssistantPanel({ isVisible, onClose, currentNetlist, isEmbedded = false, onCodeUpdate }) {
     const circuitCtx = useCircuit() || {};
+    const { refreshData } = useAuth() || {};
     const theme = circuitCtx.theme || {
         bg: '#121212', border: '#555', uiBg: '#2a2a2a', uiText: '#fff', btnBg: '#444'
     };
@@ -478,7 +480,11 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist, i
             } catch {
                 data = { error: raw || 'AI stream request failed.' };
             }
-            throw new Error(data.error || 'AI stream request failed.');
+            const err = new Error(data.error || 'AI stream request failed.');
+            err.quotaExceeded = !!data.quotaExceeded;
+            err.quotaType = data.quotaType || null;
+            err.statusCode = response.status;
+            throw err;
         }
 
         const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -870,23 +876,39 @@ export default function AIAssistantPanel({ isVisible, onClose, currentNetlist, i
                 return;
             }
 
+            // Build the error message for the chat bubble
+            let errorText;
+            if (error?.quotaExceeded) {
+                errorText = [
+                    `## 🚫 Daily Limit Reached`,
+                    '',
+                    error.message,
+                    '',
+                    '**Your free tier resets at midnight (UTC).** To keep building without interruptions:',
+                    '',
+                    '- 🚀 **[Upgrade to Pro](/pricing)** — 250k tokens & 200 messages/day',
+                    '- 💼 **[Team Plan](/pricing)** — Unlimited usage for your whole team',
+                ].join('\n');
+            } else {
+                errorText = `Unable to reach AI assistant: ${error.message}`;
+            }
+
             if (streamingAssistantId) {
                 setMessages(prev => prev.map((msg) => {
                     if (msg.id !== streamingAssistantId) return msg;
-                    return {
-                        ...msg,
-                        text: `Unable to reach AI assistant: ${error.message}`,
-                        thinkingPending: false
-                    };
+                    return { ...msg, text: errorText, thinkingPending: false, isQuotaError: !!error?.quotaExceeded };
                 }));
             } else {
                 setMessages(prev => [...prev, {
                     role: 'assistant',
-                    text: `Unable to reach AI assistant: ${error.message}`
+                    text: errorText,
+                    isQuotaError: !!error?.quotaExceeded
                 }]);
             }
         } finally {
             finishRequest(requestId);
+            // Refresh dashboard usage stats after every AI response
+            refreshData?.();
         }
     };
 

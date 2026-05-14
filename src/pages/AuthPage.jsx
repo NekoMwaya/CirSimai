@@ -62,10 +62,13 @@ export default function AuthPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Use the base URL (no hash) so Supabase's ?code= lands in
-        // window.location.search where the SDK can read it.
-        // After exchange, onAuthStateChange fires and the header shows the user.
-        redirectTo: window.location.href.split('#')[0],
+        // Use window.location.origin to ensure a clean base URL without hash fragments
+        // or query parameters that can cause Supabase callback 404/500 errors.
+        redirectTo: window.location.origin,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     });
     if (error) {

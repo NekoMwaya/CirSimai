@@ -334,21 +334,23 @@ async function trackUsage(req, responseObj) {
 
   if (tokensUsed <= 0) return
 
-  const { user, today, currentUsage, supabase } = req.userContext
-  const newUsage = currentUsage + tokensUsed
+  const { user, today, currentUsage, currentMessages, supabase } = req.userContext
+  const newUsage    = currentUsage + tokensUsed
+  const newMessages = (currentMessages ?? 0) + 1
 
   // Upsert the new usage into Supabase
   const { error } = await supabase
     .from('daily_token_usage')
     .upsert(
-      { user_id: user.id, date: today, tokens_used: newUsage },
+      { user_id: user.id, date: today, tokens_used: newUsage, messages_sent: newMessages },
       { onConflict: 'user_id,date' }
     )
 
   if (error) {
     console.error('Failed to track token usage:', error)
   } else {
-    req.userContext.currentUsage = newUsage
+    req.userContext.currentUsage    = newUsage
+    req.userContext.currentMessages = newMessages
   }
 }
 
@@ -394,7 +396,11 @@ export default async function handler(req, res) {
       return
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey)
+    // ⚡ CRITICAL: pass the user's JWT in global headers so Supabase RLS
+    //    uses auth.uid() correctly for every DB call (upsert, select, etc.)
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } }
+    })
     const { data: { user }, error: authError } = await supabase.auth.getUser(token)
 
     if (authError || !user) {
@@ -404,32 +410,62 @@ export default async function handler(req, res) {
 
     const isDev = user.email === 'rhotonsia@gmail.com'
     const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-    const DAILY_LIMIT = 16000
 
-    // 2. Check Daily Limit (skip for dev)
+    // Resolve plan-based limits
+    const PLAN_TOKEN_LIMITS = { free: 20_000, pro: 250_000, team: Infinity }
+    const PLAN_MSG_LIMITS   = { free: 20,     pro: 200,     team: Infinity }
+
+    let userPlan = 'free'
+    if (!isDev) {
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('plan')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (profileData?.plan) userPlan = profileData.plan
+    }
+
+    const TOKEN_LIMIT = PLAN_TOKEN_LIMITS[userPlan] ?? 20_000
+    const MSG_LIMIT   = PLAN_MSG_LIMITS[userPlan]   ?? 20
+
+    // 2. Check Daily Limits (skip for dev)
     let currentUsage = 0
+    let currentMessages = 0
     if (!isDev) {
       const { data: usageData, error: usageError } = await supabase
         .from('daily_token_usage')
-        .select('tokens_used')
+        .select('tokens_used, messages_sent')
         .eq('user_id', user.id)
         .eq('date', today)
-        .single()
+        .maybeSingle()
 
-      if (usageError && usageError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      if (usageError && usageError.code !== 'PGRST116') {
         console.error('Error fetching usage:', usageError)
       } else if (usageData) {
-        currentUsage = usageData.tokens_used
+        currentUsage    = usageData.tokens_used    ?? 0
+        currentMessages = usageData.messages_sent  ?? 0
       }
 
-      if (currentUsage >= DAILY_LIMIT) {
-        res.status(403).json({ error: `Daily limit reached. You have used ${currentUsage}/${DAILY_LIMIT} tokens today.` })
+      if (isFinite(TOKEN_LIMIT) && currentUsage >= TOKEN_LIMIT) {
+        res.status(403).json({
+          error: `Daily token limit reached (${currentUsage.toLocaleString()} / ${TOKEN_LIMIT.toLocaleString()} tokens). Upgrade to Pro for 250k tokens/day.`,
+          quotaExceeded: true,
+          quotaType: 'tokens'
+        })
+        return
+      }
+      if (isFinite(MSG_LIMIT) && currentMessages >= MSG_LIMIT) {
+        res.status(403).json({
+          error: `Daily message limit reached (${currentMessages} / ${MSG_LIMIT} messages). Upgrade to Pro for 200 messages/day.`,
+          quotaExceeded: true,
+          quotaType: 'messages'
+        })
         return
       }
     }
 
     // Attach user metadata to request for tracking after generation
-    req.userContext = { user, isDev, today, currentUsage, supabase }
+    req.userContext = { user, isDev, today, currentUsage, currentMessages, supabase }
 
     // Vercel automatically parses JSON bodies – body is already an object.
     const body = req.body || {}
